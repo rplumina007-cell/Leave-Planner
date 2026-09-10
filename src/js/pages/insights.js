@@ -4,7 +4,7 @@
    Planned Leave / Unplanned Leave / Planned Half Day / Unplanned Half Day. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, C = W.charts, A = W.analytics, el = U.el;
+  var U = W.util, S = W.store, C = W.charts, A = W.analytics, TF = W.teamFilter, el = U.el;
 
   var view = { tab: 'leave', from: null, to: null, team: 'all', person: 'all', includePending: true };
 
@@ -22,16 +22,11 @@
     view.to = view.to || all[all.length - 1] || U.todayISO().slice(0, 7);
   }
 
-  /* Team filter (admins only): keep the chosen team valid and the chosen person inside it. */
+  /* Take the shared team choice (teamfilter.js) and keep the chosen person inside it. */
   function scopeToTeam() {
-    if (!S.is('admin') || [S.NO_TEAM].concat(S.state.teams || []).indexOf(view.team) === -1) view.team = 'all';
-    if (view.person !== 'all' && !scopePeople().some(function (p) { return p.name === view.person; })) view.person = 'all';
+    view.team = TF.value();
+    if (view.person !== 'all' && !TF.people().some(function (p) { return p.name === view.person; })) view.person = 'all';
   }
-  function scopePeople() {
-    var ids = view.team === 'all' ? null : S.teamMemberIds(view.team);
-    return S.teamPeople().filter(function (p) { return !ids || ids[p.empId]; });
-  }
-  function teamLabel() { return view.team === S.NO_TEAM ? 'No team' : view.team; }
 
   function render(root) {
     defaults();
@@ -49,7 +44,7 @@
         el('span', { style: 'flex:1' }),
         el('span', {
           class: 'sub',
-          text: (view.team === 'all' ? '' : teamLabel() + ' · ') +
+          text: (view.team === 'all' ? '' : TF.label() + ' · ') +
             (view.person === 'all' ? d.names.length + (d.names.length === 1 ? ' person' : ' people') : view.person) + ' · ' +
             d.workingDays + ' working days · ' + U.monthLabel(view.from) +
             (view.from === view.to ? '' : ' – ' + U.monthLabel(view.to))
@@ -155,19 +150,14 @@
     var person = el('select', {
       onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
     }, [{ v: 'all', t: view.team !== 'all' ? 'Whole team' : S.seesEveryone() ? 'Everyone' : 'My team' }]
-      .concat(scopePeople().map(function (p) { return { v: p.name, t: p.name }; }))
+      .concat(TF.people().map(function (p) { return { v: p.name, t: p.name }; }))
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
-    var team = S.is('admin') ? el('select', {
-      onchange: function (e) { view.team = e.target.value; view.person = 'all'; W.app.rerender(); }
-    }, [{ v: 'all', t: 'All teams' }]
-      .concat((S.state.teams || []).map(function (t) { return { v: t, t: t }; }), [{ v: S.NO_TEAM, t: 'No team' }])
-      .map(function (o) { return el('option', { value: o.v, selected: view.team === o.v || null, text: o.t }); })) : null;
 
     return el('div', { class: 'card', style: 'margin-bottom:18px' }, [
       el('div', { class: 'card-h', style: 'border-bottom:0' }, [
         el('label', { class: 'f', style: 'font-size:11px' }, ['From', monthInput('from')]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['To', monthInput('to')]),
-        team ? el('label', { class: 'f', style: 'font-size:11px' }, ['Team', team]) : null,
+        TF.control(),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Scope', person]),
         el('span', { style: 'flex:1' }),
         el('label', {
@@ -181,7 +171,7 @@
         ]),
         el('button', {
           class: 'btn sm', text: 'Reset', onclick: function () {
-            view.from = null; view.to = null; view.team = 'all'; view.person = 'all'; view.includePending = true; W.app.rerender();
+            view.from = null; view.to = null; TF.reset(); view.person = 'all'; view.includePending = true; W.app.rerender();
           }
         })
       ])

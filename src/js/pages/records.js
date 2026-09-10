@@ -2,12 +2,12 @@
    Sortable, filterable, exportable to CSV. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, el = U.el;
+  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el;
 
   var view = { kind: 'leave', person: 'all', status: 'all', q: '', sort: 'from', dir: -1 };
 
   function rows() {
-    var list = S.visible(view.kind);
+    var list = S.visible(view.kind).filter(TF.matches());
     if (view.person !== 'all') list = list.filter(function (r) { return r.name === view.person; });
     if (view.status !== 'all') list = list.filter(function (r) { return r.status === view.status; });
     if (view.q) {
@@ -24,6 +24,8 @@
   }
 
   function render() {
+    var members = TF.people(), inTeam = TF.matches();
+    if (view.person !== 'all' && !members.some(function (p) { return p.name === view.person; })) view.person = 'all';
     var list = rows();
     var cols = [
       { k: 'name', t: 'Team member' }, { k: 'empId', t: 'Emp ID' },
@@ -43,18 +45,20 @@
         el('div', { class: 'tabs' }, [
           el('button', {
             class: view.kind === 'leave' ? 'on' : '', onclick: function () { view.kind = 'leave'; W.app.rerender(); }
-          }, ['🌴 Leave', el('span', { class: 'count', text: String(S.visible('leave').length) })]),
+          }, ['🌴 Leave', el('span', { class: 'count', text: String(S.visible('leave').filter(inTeam).length) })]),
           el('button', {
             class: view.kind === 'wfh' ? 'on' : '', onclick: function () { view.kind = 'wfh'; W.app.rerender(); }
-          }, ['🏠 WFH', el('span', { class: 'count', text: String(S.visible('wfh').length) })])
+          }, ['🏠 WFH', el('span', { class: 'count', text: String(S.visible('wfh').filter(inTeam).length) })])
         ]),
         el('span', { style: 'flex:1' }),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Search', el('input', {
           type: 'search', placeholder: 'name, reason, comment…', value: view.q,
           oninput: function (e) { view.q = e.target.value; W.app.rerender(); }
         })]),
+        TF.control(),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Member',
-          sel('person', [{ v: 'all', t: S.seesEveryone() ? 'Everyone' : 'My team' }].concat(S.teamPeople().map(function (p) { return { v: p.name, t: p.name }; })))]),
+          sel('person', [{ v: 'all', t: TF.value() !== 'all' ? 'Whole team' : S.seesEveryone() ? 'Everyone' : 'My team' }]
+            .concat(members.map(function (p) { return { v: p.name, t: p.name }; })))]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Status',
           sel('status', [{ v: 'all', t: 'All' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }, { v: 'Declined', t: 'Declined' }])]),
         el('button', { class: 'btn', text: '⬇ CSV', onclick: function () { exportCSV(list, cols); } })

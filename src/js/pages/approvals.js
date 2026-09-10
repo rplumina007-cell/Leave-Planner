@@ -2,9 +2,10 @@
    Pending vs Decided (tabs), and within each, Leave vs WFH (separate cards). */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, el = U.el;
+  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el;
 
   var view = { tab: 'pending', person: 'all', selection: {} };
+  var inTeam = function () { return true; };     // refreshed from the team filter on every render
 
   function selKey(kind, id) { return kind + ':' + id; }
   /* Decided requests this user could act on - a manager's own reports, or all for an admin. */
@@ -12,8 +13,13 @@
   function selected() { return Object.keys(view.selection).filter(function (k) { return view.selection[k]; }); }
 
   function render(root) {
-    var nPend = S.actionable('leave').length + S.actionable('wfh').length;
-    var nDone = mine('leave').length + mine('wfh').length;
+    inTeam = TF.matches();
+    var people = TF.people().filter(function (p) {
+      return S.is('admin') || p.empId !== S.me().empId;    // a manager never decides their own
+    });
+    if (view.person !== 'all' && !people.some(function (p) { return p.name === view.person; })) view.person = 'all';
+    var nPend = S.actionable('leave').filter(inTeam).length + S.actionable('wfh').filter(inTeam).length;
+    var nDone = mine('leave').filter(inTeam).length + mine('wfh').filter(inTeam).length;
 
     var tabs = el('div', { class: 'tabs' }, [
       tabBtn('pending', 'Pending approval', nPend),
@@ -22,15 +28,14 @@
 
     var filter = el('select', {
       onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
-    }, [{ v: 'all', t: 'All team members' }].concat(S.teamPeople().filter(function (p) {
-      return S.is('admin') || p.empId !== S.me().empId;    // a manager never decides their own
-    }).map(function (p) { return { v: p.name, t: p.name }; }))
+    }, [{ v: 'all', t: 'All team members' }].concat(people.map(function (p) { return { v: p.name, t: p.name }; }))
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
 
     var bar = el('div', { class: 'row', style: 'margin-bottom:16px' }, [
       tabs,
       S.is('manager') ? el('span', { class: 'sub', text: 'Requests from your team' }) : null,
       el('span', { style: 'flex:1' }),
+      TF.control(function () { view.selection = {}; }),     // never bulk-act on requests the filter hides
       el('label', { class: 'f', style: 'font-size:11px' }, ['Filter', filter])
     ]);
 
@@ -74,6 +79,7 @@
   }
 
   function byPerson(list) {
+    list = list.filter(inTeam);
     return view.person === 'all' ? list : list.filter(function (r) { return r.name === view.person; });
   }
 

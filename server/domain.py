@@ -369,5 +369,6 @@ def view_for(state, viewer, users):
         out[kind] = rows
     if viewer["role"] == "admin":
         out["audit"] = state.get("audit", [])[:100]
-        out["teams"] = state.get("teams", [])
+    if viewer["role"] == "admin" or (viewer["role"] == "manager" and ALL_TEAMS in (viewer.get("teams") or [])):
+        out["teams"] = state.get("teams", [])       # the team filter's choices
     return out

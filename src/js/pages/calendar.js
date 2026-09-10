@@ -4,9 +4,10 @@
    stays legible through the leaf/house icon and the legend regardless. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, el = U.el;
+  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el;
 
   var view = { month: null, person: 'all', kind: 'both', status: 'all', selected: null };
+  var inTeam = function () { return true; };     // refreshed from the team filter on every render
 
   function shortReason(rec, kind) {
     if (kind === 'wfh') return rec.reason;
@@ -18,6 +19,7 @@
   }
 
   function passes(rec, kind) {
+    if (!inTeam(rec)) return false;
     if (view.kind !== 'both' && view.kind !== kind) return false;
     if (view.person !== 'all' && rec.name !== view.person) return false;
     if (view.status === 'all' && rec.status === 'Declined') return false;
@@ -27,6 +29,9 @@
 
   function render(root) {
     if (!view.month) view.month = U.todayISO().slice(0, 7);
+    inTeam = TF.matches();
+    var members = S.state.people.filter(inTeam);
+    if (view.person !== 'all' && !members.some(function (x) { return x.name === view.person; })) view.person = 'all';
     var index = S.byDate(passes);
 
     var p = view.month.split('-'), year = +p[0], mon = +p[1] - 1;
@@ -61,7 +66,9 @@
         }
       }),
       el('span', { style: 'flex:1' }),
-      ctl('Member', [{ v: 'all', t: S.seesEveryone() ? 'Everyone' : 'My team' }].concat(S.state.people.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
+      TF.control(function () { view.selected = null; }),
+      ctl('Member', [{ v: 'all', t: TF.value() !== 'all' ? 'Whole team' : S.seesEveryone() ? 'Everyone' : 'My team' }]
+        .concat(members.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
       ctl('Type', [{ v: 'both', t: 'Leave + WFH' }, { v: 'leave', t: 'Leave only' }, { v: 'wfh', t: 'WFH only' }], 'kind'),
       ctl('Status', [{ v: 'all', t: 'Approved + Pending' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }], 'status')
     ]);
@@ -232,7 +239,7 @@
       el('div', { class: 'card-b', style: 'display:grid;gap:10px' }, [
         statRow('🌴', 'Leave days taken', U.n1(leaveDays), 'var(--leave)'),
         statRow('🏠', 'WFH days', U.n1(wfhDays), 'var(--wfh)'),
-        statRow('👥', 'People with time off', Object.keys(peopleOut).length + ' of ' + S.state.people.length, 'var(--muted)'),
+        statRow('👥', 'People with time off', Object.keys(peopleOut).length + ' of ' + S.state.people.filter(inTeam).length, 'var(--muted)'),
         busiest && busiest.n > 1
           ? statRow('⚠️', 'Thinnest cover', U.fmt(busiest.date) + ' (' + busiest.n + ' out)', 'var(--warn)')
           : null
@@ -242,7 +249,7 @@
     /* upcoming */
     var today = U.todayISO();
     var upcoming = S.both().filter(function (r) {
-      return r.status !== 'Declined' && (r.to || r.from) >= today &&
+      return inTeam(r) && r.status !== 'Declined' && (r.to || r.from) >= today &&
         (view.person === 'all' || r.name === view.person);
     }).sort(function (a, b) { return a.from < b.from ? -1 : 1; }).slice(0, 6);
 

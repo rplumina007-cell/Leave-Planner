@@ -59,6 +59,13 @@ Teams** and gives each login one or more of them in **Users**. People see only
 those who share one of their teams — nothing at all about anyone else — and
 **All Teams** counts as every team. Someone with no team sees only themselves.
 
+**Team filter.** Admins, and managers in more than one team or in All Teams, get
+a **Team** filter on the Calendar, Approvals, Dashboards and Register; the choice
+carries from page to page. It counts people explicitly in a team (people in All
+Teams show only under "All teams"), and **No team** — for admins and All Teams
+managers — covers everyone without one, including people who only exist in the
+records.
+
 **Managers** act — apply on someone's behalf, approve or decline, delete — only
 for people below them in the reporting chain (people assigned to them, to the
 managers assigned to them, and so on) who are also in one of their teams. Every
@@ -159,7 +166,7 @@ Either way, serve it over HTTPS (`--cert/--key`) before anyone else signs in.
 | --- | --- |
 | **Calendar** | Month of raised day tiles marking every day someone is on leave or WFH. Chips carry three colours — **planned leave** ochre 🌴, **unplanned leave** wine 🌴, **WFH** teal 🏠 — so planned-ness is readable without opening a day, and the leaf/house icon keeps Leave vs WFH distinct regardless. The stripe across the top of each tile splits the same three ways. Never merged into one "out" state. A dashed left border means still awaiting approval; `½AM` / `½PM` marks half days. Filter by member, type and status; click a day for the full roster. |
 | **Approvals** | The manager queue. Split first into **Pending approval** vs **Approved & declined**, and within each into separate **Leave** and **WFH** cards. Shows days of notice and flags teammates already off on the same dates. Approve/decline singly or in bulk; declining prompts for a note. |
-| **Dashboards** | Three tabs on one page — **Leave**, **WFH** and **Combined**. All share a single filter window (date range, person, whether pending counts — and, for admins, team), so changing the scope carries across all three and they stay comparable. The team filter counts people explicitly in that team; **No team** covers everyone without one, including people who only exist in the records. Each has its own KPI row. Combined carries off-site pressure, per-person and monthly leave-plus-WFH totals, the three-way time split, the leave-vs-WFH rate trend, and coverage risk. |
+| **Dashboards** | Three tabs on one page — **Leave**, **WFH** and **Combined**. All share a single filter window (date range, team, person, whether pending counts), so changing the scope carries across all three and they stay comparable. Each has its own KPI row. Combined carries off-site pressure, per-person and monthly leave-plus-WFH totals, the three-way time split, the leave-vs-WFH rate trend, and coverage risk. |
 | **Register** | The searchable, sortable equivalent of the sheet's Leave and WFH tabs, with CSV export. |
 
 ## The four leave categories

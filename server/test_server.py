@@ -259,6 +259,11 @@ def main():
     check("All Teams sees everyone, sheet-only people included", {"E1", "E2", "E5", "M1", "M2", "P001"} <= g_seen, sorted(g_seen))
     others = [r for k in ("leave", "wfh") for r in stg[k] if r["empId"] != "G1"]
     check("...but as an employee still without teammates' reasons", others and all(r.get("redacted") and r["reason"] is None for r in others))
+    check("a manager in specific teams doesn't get the full team list", "teams" not in m1.req("GET", "/api/state")[1])
+    admin.req("POST", "/api/users/update", {"empId": "M1", "teams": ["All Teams"]})
+    check("a manager in All Teams gets the team list (team filter choices)",
+          m1.req("GET", "/api/state")[1].get("teams") == ["Alpha", "Beta", "Gamma"])
+    admin.req("POST", "/api/users/update", {"empId": "M1", "teams": ["Alpha", "Beta"]})
     check("admin decides anyone's request", decide(admin, pend[0]["id"])[0] == 200)
     check("admin can revoke a decision", decide(admin, m2_id, "Declined")[0] == 200)
 
