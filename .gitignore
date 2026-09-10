@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+
+# Databases - accounts and live tracker data never belong in the repo
+*.sqlite3
+*.sqlite3-*
+*.db
+
+# Imported sheet data and the sheet ID - personal data, kept local only.
+# The live server gets them by running tools/import-sheet.py there, or by
+# copying these files across (see README: Going live).
+data/seed.json
+data/seed.js
+data/sheet-id.txt
+
+# Local tooling and build output
+.claude/
+dist/

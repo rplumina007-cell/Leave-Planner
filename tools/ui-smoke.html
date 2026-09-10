@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI smoke test — not the app</title>
+<link rel="stylesheet" href="../src/css/fonts.css">
+<link rel="stylesheet" href="../src/css/app.css">
+</head>
+<body>
+<!-- Developer-only: renders the real app code against a fake API with a chosen
+     role (?role=employee|manager|admin|mustchange), so the UI can be checked
+     without signing in. Never served by server/app.py. -->
+<div class="app" id="root"></div>
+<script src="../src/js/util.js"></script>
+<script src="ui-smoke-api.js"></script>
+<script src="../src/js/store.js"></script>
+<script src="../src/js/analytics.js"></script>
+<script src="../src/js/charts.js"></script>
+<script src="../src/js/form.js"></script>
+<script src="../src/js/pages/calendar.js"></script>
+<script src="../src/js/pages/approvals.js"></script>
+<script src="../src/js/pages/insights.js"></script>
+<script src="../src/js/pages/records.js"></script>
+<script src="../src/js/settings.js"></script>
+<script src="../src/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,399 @@
+/* ============================================================================
+   WFS Tracker — "Warm Press"
+   Warm Paper palette (terracotta / teal on ivory) rendered as floating panels of
+   woven stock, warm ambient light behind, layered shadows so panels sit above the
+   page rather than on it. Surface texture is organic fractal noise in the
+   surface's own warm hue — never grey, no angle, no period, and weak enough to
+   read as tone rather than pattern. It is background; the content is the subject.
+   Glass/backdrop-blur is reserved for the sticky top bar, where content genuinely
+   passes underneath and diffusing it does real work.
+   Type: SF Pro Display (headings + headline figures) / SF Pro Text (interface),
+   falling back to Segoe UI Variable off Apple platforms.
+   ========================================================================== */
+
+:root{
+  /* --- warm paper neutrals --- */
+  --bg:#f7f4ef;
+  --surface:rgba(255,253,249,.92);
+  --surface-solid:#fffdf9;
+  --surface-2:rgba(238,232,222,.85);
+  --surface-3:#f0ebe2;
+  --line:rgba(120,98,74,.20);
+  --line-strong:rgba(120,98,74,.30);
+  --text:#241f1a; --muted:#6b6157; --faint:#9a8f82;
+
+  /* --- leave = terracotta, wfh = teal --- */
+  --leave:#a63d1f; --leave-bg:rgba(166,61,31,.11); --leave-line:rgba(166,61,31,.32);
+  --wfh:#0f6b6b;  --wfh-bg:rgba(15,107,107,.11);  --wfh-line:rgba(15,107,107,.32);
+
+  --ok:#3f6b2e; --ok-bg:rgba(63,107,46,.13);
+  --warn:#8a6314; --warn-bg:rgba(138,99,20,.14);
+  --bad:#a33119; --bad-bg:rgba(163,49,25,.13);
+  --accent:#a63d1f; --accent-soft:rgba(166,61,31,.13);
+
+  /* categorical — warm-biased, still separable */
+  --c1:#0f6b6b; --c2:#c98a2b; --c3:#a63d1f; --c4:#8c3b6b; --c5:#4a7c3f; --c6:#3f5f9e;
+
+  /* Leave categories: planned reads calm ochre, unplanned reads wine, and the
+     lighter tint of each is its half day - so the family grouping survives.
+     Checked in CIE Lab: every pair here, plus the Leave and WFH identity
+     colours, is >=22 dE apart, so none can be mistaken for another. Never teal
+     (that means WFH) and never terracotta (that is the Leave identity). */
+  --bk-p:#a8781c; --bk-ph:#dcb471; --bk-u:#9b2456; --bk-uh:#d488a6;
+  --bk-p-bg:rgba(168,120,28,.13); --bk-p-ink:#7d5810;
+  --bk-u-bg:rgba(155,36,86,.12);  --bk-u-ink:#8f2150;
+
+  /* --- floating depth --- */
+  --r:18px; --r-sm:12px; --r-xs:9px;
+  --lift-1:0 1px 2px rgba(74,55,36,.05), 0 4px 12px rgba(74,55,36,.06);
+  --lift-2:0 2px 6px rgba(74,55,36,.06), 0 14px 34px rgba(74,55,36,.10);
+  --lift-3:0 4px 10px rgba(74,55,36,.06), 0 26px 60px rgba(74,55,36,.14);
+  --rim:inset 0 1px 0 rgba(255,255,255,.65);
+  --blur:saturate(120%) blur(10px);
+
+  /* SF Pro (San Francisco). Real SF resolves on Apple platforms via
+     -apple-system / BlinkMacSystemFont; the named 'SF Pro *' families catch a
+     local install on Windows. Off Apple platforms it lands on Inter, which was
+     drawn in the SF idiom and is self-hosted in fonts.css (OFL, inlined, so the
+     app still makes zero outbound requests). Segoe UI Variable then system-ui
+     back that up; the variable face is listed first deliberately, since on
+     Windows system-ui resolves to plain Segoe UI and would shadow it. Display for headings and headline
+     figures, Text for interface copy - that is SF's own size split. */
+  --display:"SF Pro Display","SF Pro",-apple-system,BlinkMacSystemFont,
+    "Inter","Segoe UI Variable Display",system-ui,"Segoe UI",Roboto,sans-serif;
+  --ui:"SF Pro Text","SF Pro",-apple-system,BlinkMacSystemFont,
+    "Inter","Segoe UI Variable Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+
+  /* near-opaque veil laid over the grain so the texture reads on the card
+     itself, not just in the page margins */
+  --veil:rgba(255,253,249,.955);
+  --veil-2:rgba(237,231,220,.94);
+  --tray:rgba(226,217,203,.55); --tray-inset:rgba(74,55,36,.09);
+
+  /* Organic fibre: tiled fractal turbulence, tinted with the surface's own
+     warm hue so it never greys the stock. Randomised by construction - no
+     angle, no period, nothing to read as a pattern. Mean darkening is ~3
+     levels: felt as material, not seen as decoration. */
+  --carbon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.34' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.486 0 0 0 0 0.396 0 0 0 0 0.290 0.022 0.022 0.012 0 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23w)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#15110d;
+    --surface:rgba(38,31,25,.90);
+    --surface-solid:#241e18;
+    --surface-2:rgba(56,46,37,.78);
+    --surface-3:#2c251e;
+    --line:rgba(226,196,158,.18);
+    --line-strong:rgba(226,196,158,.28);
+    --text:#f2ece3; --muted:#b3a695; --faint:#8a7d6c;
+
+    --leave:#f0a179; --leave-bg:rgba(240,161,121,.15); --leave-line:rgba(240,161,121,.34);
+    --wfh:#5fcfcf;  --wfh-bg:rgba(95,207,207,.14);   --wfh-line:rgba(95,207,207,.32);
+
+    --ok:#8ec97a; --ok-bg:rgba(142,201,122,.15);
+    --warn:#e0b055; --warn-bg:rgba(224,176,85,.15);
+    --bad:#ef8a70; --bad-bg:rgba(239,138,112,.15);
+    --accent:#f0a179; --accent-soft:rgba(240,161,121,.16);
+
+    --c1:#5fcfcf; --c2:#e0b055; --c3:#f0a179; --c4:#d98cc0; --c5:#9ed187; --c6:#8fa8e8;
+    --bk-p:#e0b458; --bk-ph:#f0d9a8; --bk-u:#e0709e; --bk-uh:#f0a8c4;
+    --bk-p-bg:rgba(224,180,88,.15); --bk-p-ink:#e0b458;
+    --bk-u-bg:rgba(224,112,158,.15); --bk-u-ink:#eb92b6;
+
+    --lift-1:0 1px 2px rgba(0,0,0,.34), 0 4px 12px rgba(0,0,0,.30);
+    --lift-2:0 2px 6px rgba(0,0,0,.36), 0 14px 34px rgba(0,0,0,.42);
+    --lift-3:0 4px 10px rgba(0,0,0,.38), 0 26px 60px rgba(0,0,0,.52);
+    --rim:inset 0 1px 0 rgba(255,255,255,.07);
+    --veil:rgba(40,33,26,.955);
+    --veil-2:rgba(58,48,38,.94);
+    --tray:rgba(12,9,7,.45); --tray-inset:rgba(0,0,0,.45);
+    --carbon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.34' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 0.957 0 0 0 0 0.902 0.030 0.030 0.018 0 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23w)'/%3E%3C/svg%3E");
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15110d;
+  --surface:rgba(38,31,25,.90);
+  --surface-solid:#241e18;
+  --surface-2:rgba(56,46,37,.78);
+  --surface-3:#2c251e;
+  --line:rgba(226,196,158,.18);
+  --line-strong:rgba(226,196,158,.28);
+  --text:#f2ece3; --muted:#b3a695; --faint:#8a7d6c;
+  --leave:#f0a179; --leave-bg:rgba(240,161,121,.15); --leave-line:rgba(240,161,121,.34);
+  --wfh:#5fcfcf;  --wfh-bg:rgba(95,207,207,.14);   --wfh-line:rgba(95,207,207,.32);
+  --ok:#8ec97a; --ok-bg:rgba(142,201,122,.15);
+  --warn:#e0b055; --warn-bg:rgba(224,176,85,.15);
+  --bad:#ef8a70; --bad-bg:rgba(239,138,112,.15);
+  --accent:#f0a179; --accent-soft:rgba(240,161,121,.16);
+  --c1:#5fcfcf; --c2:#e0b055; --c3:#f0a179; --c4:#d98cc0; --c5:#9ed187; --c6:#8fa8e8;
+  --bk-p:#e0b458; --bk-ph:#f0d9a8; --bk-u:#e0709e; --bk-uh:#f0a8c4;
+  --bk-p-bg:rgba(224,180,88,.15); --bk-p-ink:#e0b458;
+  --bk-u-bg:rgba(224,112,158,.15); --bk-u-ink:#eb92b6;
+  --lift-1:0 1px 2px rgba(0,0,0,.34), 0 4px 12px rgba(0,0,0,.30);
+  --lift-2:0 2px 6px rgba(0,0,0,.36), 0 14px 34px rgba(0,0,0,.42);
+  --lift-3:0 4px 10px rgba(0,0,0,.38), 0 26px 60px rgba(0,0,0,.52);
+  --rim:inset 0 1px 0 rgba(255,255,255,.07);
+  --veil:rgba(40,33,26,.955);
+  --veil-2:rgba(58,48,38,.94);
+  --tray:rgba(12,9,7,.45); --tray-inset:rgba(0,0,0,.45);
+  --carbon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.34' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 0.957 0 0 0 0 0.902 0.030 0.030 0.018 0 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23w)'/%3E%3C/svg%3E");
+}
+
+*{box-sizing:border-box}
+
+/* Ambient warm light — fixed, so cards drift over it as you scroll. */
+body{
+  margin:0; color:var(--text); font-family:var(--ui);
+  font-size:14px; line-height:1.55; letter-spacing:-.011em;
+  background:var(--bg);
+  -webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(1100px 620px at 12% -12%, rgba(166,61,31,.13), transparent 62%),
+    radial-gradient(900px 520px at 88% -6%,  rgba(15,107,107,.12), transparent 58%),
+    radial-gradient(800px 800px at 50% 115%, rgba(201,138,43,.10), transparent 62%);
+}
+body::after{
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background-image:var(--carbon); background-repeat:repeat;
+}
+
+h1,h2,h3,h4{margin:0;font-family:var(--display);font-weight:700;letter-spacing:-.024em}
+button,input,select,textarea{font:inherit;font-family:var(--ui);color:inherit}
+a{color:var(--accent)}
+.num,.mono{font-family:var(--ui);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.01em}
+
+/* ---------- shell ---------- */
+.app{max-width:1340px;margin:0 auto;padding:0 22px 80px}
+.topbar{
+  /* top:0 rather than a floating offset — an offset leaves a gap that scrolled
+     content shows through above the bar. */
+  position:sticky; top:0; z-index:40; margin:12px 0 24px;
+  padding:10px 14px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+  box-shadow:var(--lift-2), var(--rim);
+  -webkit-backdrop-filter:var(--blur); backdrop-filter:var(--blur);
+}
+.topbar::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background-image:var(--carbon);
+}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);
+  font-weight:700;letter-spacing:-.03em;font-size:16.5px}
+.brand .dot{width:26px;height:26px;border-radius:9px;
+  background:linear-gradient(140deg,var(--leave),var(--c2) 55%,var(--wfh));
+  display:grid;place-items:center;color:#fff;font-size:12px;font-weight:700;
+  box-shadow:0 3px 10px rgba(166,61,31,.35)}
+.nav{display:flex;gap:3px;background:var(--surface-2);padding:4px;border-radius:var(--r-sm);
+  border:1px solid var(--line)}
+.nav a{padding:6px 14px;border-radius:var(--r-xs);text-decoration:none;color:var(--muted);
+  font-weight:700;font-size:13px;white-space:nowrap;transition:.18s}
+.nav a:hover{color:var(--text);background:var(--surface-2)}
+.nav a.on{background:var(--surface-solid);color:var(--text);box-shadow:var(--lift-1)}
+.spacer{flex:1}
+.who{display:flex;align-items:center;gap:9px}
+.who select{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  padding:7px 10px;max-width:190px;font-weight:600;font-size:13px}
+.iconbtn{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  width:34px;height:34px;cursor:pointer;display:grid;place-items:center;font-size:15px;transition:.18s}
+.iconbtn:hover{border-color:var(--line-strong);transform:translateY(-1px);box-shadow:var(--lift-1)}
+
+/* ---------- floating surfaces ---------- */
+/* One recipe for every raised surface: carbon weave over paper grain over the
+   veil. Kept in a single rule so the texture can never drift between elements. */
+.card,.kpi,.day,.modal .box{
+  background-color:var(--surface-solid);
+  background-image:var(--carbon);
+}
+.card{
+  border:1px solid var(--line); border-radius:var(--r);
+  box-shadow:var(--lift-2), var(--rim);
+  transition:transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s;
+}
+.card:hover{transform:translateY(-2px);box-shadow:var(--lift-3), var(--rim)}
+.card-h{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;
+  gap:11px;flex-wrap:wrap}
+.card-h h3{font-size:16px;font-weight:700}
+.card-b{padding:18px}
+.sub{color:var(--muted);font-size:12.5px;font-weight:500;font-family:var(--ui);letter-spacing:0}
+.grid{display:grid;gap:18px}
+.grid>*,.calwrap>*,.g2>*,.kpis>*{min-width:0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+.btn{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  padding:8px 15px;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap;
+  transition:.18s;box-shadow:var(--lift-1)}
+.btn:hover{border-color:var(--line-strong);transform:translateY(-1px);box-shadow:var(--lift-2)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(140deg,var(--leave),#8f3218);border-color:transparent;color:#fff;
+  box-shadow:0 3px 12px rgba(166,61,31,.34)}
+.btn.primary:hover{box-shadow:0 6px 20px rgba(166,61,31,.42)}
+.btn.ok{background:var(--ok-bg);color:var(--ok);border-color:transparent}
+.btn.bad{background:var(--bad-bg);color:var(--bad);border-color:transparent}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.sm{padding:5px 11px;font-size:12px}
+
+label.f{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:800;
+  color:var(--faint);text-transform:uppercase;letter-spacing:.07em}
+label.f>select,label.f>input,label.f>textarea{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  padding:9px 11px;font-weight:500;font-size:13px;color:var(--text);width:100%;
+  text-transform:none;letter-spacing:0;transition:.18s}
+label.f>select:focus,label.f>input:focus,label.f>textarea:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;
+  font-size:11.5px;font-weight:750;border:1px solid transparent;white-space:nowrap;letter-spacing:-.01em}
+.pill.leave{background:var(--leave-bg);color:var(--leave);border-color:var(--leave-line)}
+.pill.wfh{background:var(--wfh-bg);color:var(--wfh);border-color:var(--wfh-line)}
+.pill.Approved{background:var(--ok-bg);color:var(--ok)}
+.pill.Pending{background:var(--warn-bg);color:var(--warn)}
+.pill.Declined{background:var(--bad-bg);color:var(--bad)}
+.pill.ghost{background:var(--surface-2);color:var(--muted);border-color:var(--line)}
+.empty{padding:44px 18px;text-align:center;color:var(--faint);font-size:13px}
+.avatar{width:27px;height:27px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--ui);font-size:10px;font-weight:800;letter-spacing:.02em;color:#fff;flex:none;
+  box-shadow:0 2px 7px rgba(74,55,36,.24), inset 0 1px 0 rgba(255,255,255,.22)}
+
+.tabs{display:flex;gap:3px;background:var(--surface-2);padding:4px;border-radius:var(--r-sm);
+  border:1px solid var(--line);box-shadow:var(--lift-1);max-width:100%;overflow-x:auto;
+  scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{background:none;border:0;padding:7px 15px;border-radius:var(--r-xs);cursor:pointer;
+  color:var(--muted);font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px;
+  transition:.18s;white-space:nowrap;flex:none}
+.tabs button:hover{color:var(--text)}
+.tabs button.on{background:var(--surface-solid);color:var(--text);box-shadow:var(--lift-1)}
+.count{background:var(--surface-3);border-radius:999px;padding:1px 7px;font-size:11px;font-weight:700;
+  font-family:var(--ui);font-variant-numeric:tabular-nums}
+.tabs button.on .count{background:var(--accent);color:#fff}
+
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);
+  padding:11px 14px;border-bottom:1px solid var(--line);font-weight:800}
+td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tbody tr{transition:background .15s}
+tbody tr:hover{background:var(--surface-2)}
+.scroll{overflow-x:auto}
+
+/* ---------- calendar ---------- */
+.calwrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+@media(max-width:1000px){.calwrap{grid-template-columns:1fr}}
+/* The grid is a recessed tray; each day is a raised, textured tile sitting in it. */
+.calscroll{overflow-x:auto;padding:12px;
+  background:linear-gradient(var(--tray),var(--tray));
+  box-shadow:inset 0 2px 5px var(--tray-inset), inset 0 -1px 0 rgba(255,255,255,.28)}
+.calhead{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin-bottom:8px}
+.calhead div{padding:2px 4px;font-size:10.5px;font-weight:800;text-transform:uppercase;
+  letter-spacing:.09em;color:var(--faint);text-align:center}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.day{min-height:120px;padding:8px;display:flex;flex-direction:column;gap:3px;cursor:pointer;
+  position:relative;overflow:hidden;text-align:left;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  box-shadow:var(--lift-1), var(--rim);
+  transition:transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s, filter .18s}
+.day:hover{transform:translateY(-3px);box-shadow:var(--lift-3), var(--rim);z-index:3}
+.day.out{opacity:.42;box-shadow:none}
+/* weekends step back via a warmer, flatter stock — never by desaturating, which
+   would grey them out against the warm palette */
+.day.we{background-color:var(--surface-3);box-shadow:none;border-style:dashed}
+.day.sel{box-shadow:0 0 0 2px var(--accent), var(--lift-3);z-index:4;transform:translateY(-3px)}
+.day .dnum{font-family:var(--display);font-size:13.5px;font-weight:700;color:var(--muted);
+  display:flex;align-items:center;gap:6px}
+.day.today .dnum b{background:linear-gradient(140deg,var(--leave),#8f3218);color:#fff;
+  width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:11px;
+  box-shadow:0 2px 8px rgba(166,61,31,.42)}
+.chip{display:flex;align-items:center;gap:5px;font-size:11px;padding:3px 7px;border-radius:7px;
+  line-height:1.35;border-left:3px solid;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+  font-weight:600;box-shadow:0 1px 3px rgba(74,55,36,.10)}
+/* Leave chips are coloured by category so planned vs unplanned is readable on
+   the calendar itself. The leaf/house icon still carries Leave vs WFH. */
+.chip.leave{background:var(--leave-bg);color:var(--leave);border-color:var(--leave)}
+.chip.leave.planned{background:var(--bk-p-bg);color:var(--bk-p-ink);border-color:var(--bk-p)}
+.chip.leave.unplanned{background:var(--bk-u-bg);color:var(--bk-u-ink);border-color:var(--bk-u)}
+.chip.wfh{background:var(--wfh-bg);color:var(--wfh);border-color:var(--wfh)}
+.chip.pend{border-left-style:dashed;opacity:.9}
+.chip .half{font-family:var(--ui);font-size:9px;opacity:.9;font-weight:800}
+.more{font-size:10.5px;color:var(--faint);padding-left:5px;font-weight:650}
+.daybar{display:flex;position:absolute;top:0;left:0;right:0;height:4px;overflow:hidden}
+.daybar i{flex:1}
+.legend{display:flex;gap:15px;flex-wrap:wrap;font-size:12px;color:var(--muted);align-items:center}
+.legend b{display:inline-block;width:11px;height:11px;border-radius:4px;margin-right:6px;vertical-align:-1px}
+.side .item{padding:11px 16px;border-bottom:1px solid var(--line);display:flex;gap:11px;align-items:flex-start}
+.side .item:last-child{border-bottom:0}
+
+/* ---------- dashboards ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+/* the four leave categories are a fixed set - never let them orphan-wrap 3+1 */
+.kpis.quad{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1080px){.kpis.quad{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.kpis.quad{grid-template-columns:1fr}}
+.kpi{border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:15px 17px;box-shadow:var(--lift-2), var(--rim);
+  transition:transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s}
+.kpi:hover{transform:translateY(-3px);box-shadow:var(--lift-3), var(--rim)}
+.kpi .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);font-weight:800}
+.kpi .v{font-family:var(--display);font-size:31px;font-weight:700;letter-spacing:-.038em;
+  margin-top:5px;font-variant-numeric:tabular-nums;line-height:1.05}
+.kpi .d{font-size:11.5px;color:var(--muted);margin-top:4px;font-weight:500}
+.kpi .v small{font-size:13px;color:var(--muted);font-weight:600;font-family:var(--ui)}
+
+.bar-row{display:grid;grid-template-columns:138px 1fr 68px;gap:12px;align-items:center;
+  margin-bottom:8px;font-size:12.5px}
+.bar-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}
+.bar{display:flex;height:18px;border-radius:6px;overflow:hidden;background:var(--surface-2);
+  box-shadow:inset 0 1px 2px rgba(74,55,36,.07)}
+.bar i{display:block;transition:width .45s cubic-bezier(.22,1,.36,1)}
+.bar i:hover{filter:brightness(1.12)}
+.lg{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:14px}
+.lg span{display:flex;align-items:center;gap:6px}
+.lg b{width:10px;height:10px;border-radius:3px;display:block}
+.spark{display:block;width:100%;height:auto;overflow:visible}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:900px){.g2{grid-template-columns:1fr}}
+.section-title{display:flex;align-items:center;gap:12px;margin:30px 0 14px}
+.section-title h2{font-size:20px;letter-spacing:-.028em;font-weight:700}
+.section-title .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line-strong),transparent)}
+.tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;background:var(--surface-2);
+  color:var(--muted);border:1px solid var(--line)}
+
+/* ---------- modal ---------- */
+.modal{position:fixed;inset:0;background:rgba(36,26,18,.42);display:grid;place-items:center;
+  z-index:100;padding:20px;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  animation:fade .18s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.modal .box{border:1px solid var(--line);border-radius:22px;
+  width:min(580px,100%);max-height:88vh;overflow:auto;
+  box-shadow:0 30px 80px rgba(36,26,18,.34), var(--rim);
+  animation:rise .26s cubic-bezier(.22,1,.36,1)}
+@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
+.modal .box.wide{width:min(880px,100%)}
+.modal .box h3{font-size:15.5px}
+.modal .box .tabs{box-shadow:none}
+.modal .box table th,.modal .box table td{padding:8px 10px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:520px){.f2{grid-template-columns:1fr}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--text);color:var(--bg);padding:11px 20px;border-radius:12px;font-size:13px;
+  font-weight:650;z-index:200;box-shadow:0 14px 36px rgba(36,26,18,.36);
+  animation:rise .26s cubic-bezier(.22,1,.36,1)}
+.err{color:var(--bad);font-size:12px;font-weight:650;margin-top:8px}
+
+/* ---------- responsive ---------- */
+@media(max-width:760px){
+  .app{padding:0 14px 60px}
+  .topbar{gap:11px;border-radius:var(--r-sm)}
+  .nav a{padding:6px 11px}
+  .calhead,.calgrid{min-width:680px}
+  .day{min-height:104px}
+  .calscroll{padding:9px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .card:hover,.kpi:hover,.btn:hover,.iconbtn:hover{transform:none}
+}

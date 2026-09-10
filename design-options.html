@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WFS Tracker — style options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* ============ page chrome (not part of the options) ============ */
+*{box-sizing:border-box}
+body{margin:0;background:#0f1216;color:#e8ebf0;
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.page{max-width:1180px;margin:0 auto;padding:40px 22px 90px}
+.lede h1{font-size:27px;margin:0 0 8px;letter-spacing:-.02em}
+.lede p{color:#9aa5b4;margin:0 0 6px;max-width:70ch}
+.q{margin:52px 0 16px;padding-top:26px;border-top:1px solid #262d38}
+.q .n{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7c8797}
+.q h2{font-size:19px;margin:6px 0 5px;letter-spacing:-.01em}
+.q p{color:#9aa5b4;margin:0;font-size:14px;max-width:74ch}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+@media(max-width:860px){.pair{grid-template-columns:1fr}}
+.opt{border:1px solid #262d38;border-radius:12px;overflow:hidden;background:#151a21}
+.opt>header{padding:12px 15px;border-bottom:1px solid #262d38;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.opt>header b{font-size:14px}
+.opt>header .tag{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  background:#2b3442;color:#c6cedb;padding:2px 7px;border-radius:5px}
+.opt>header span{color:#8b95a3;font-size:12.5px;flex-basis:100%}
+.stage{padding:18px;background:var(--bg)}
+.verdict{padding:11px 15px;border-top:1px solid #262d38;color:#9aa5b4;font-size:12.5px;background:#11161c}
+.verdict b{color:#cfd7e2}
+
+/* ============ shared demo component vocabulary ============ */
+/* Baseline tokens; each variant class below overrides only its own dimension. */
+.demo{
+  --bg:#f6f7f9; --surface:#fff; --surface2:#f1f3f6; --line:#e2e5ea;
+  --text:#12161c; --muted:#5c6673; --faint:#8b95a3;
+  --leave:#c2410c; --leaveBg:#ffedd5; --wfh:#3730a3; --wfhBg:#e0e7ff;
+  --ok:#15803d; --okBg:#dcfce7; --warn:#a16207; --warnBg:#fef3c7;
+  --accent:#1d4ed8; --c1:#4f46e5; --c4:#be123c;
+  --r:10px; --pad:15px; --shadow:0 1px 2px rgba(16,24,40,.07),0 1px 3px rgba(16,24,40,.1);
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --num:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --numFeat:"tnum" 1; --headWeight:650; --headTrack:-.01em;
+  color:var(--text);font-family:var(--ui);
+}
+.demo .bar{display:flex;align-items:center;gap:11px;padding:9px var(--pad);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:13px}
+.demo .brandmark{width:21px;height:21px;border-radius:6px;background:linear-gradient(135deg,var(--leave),var(--c1));
+  display:grid;place-items:center;color:#fff;font-size:10px;font-weight:800}
+.demo .brandname{font-weight:700;letter-spacing:-.02em;font-size:13.5px}
+.demo .tabs{display:flex;gap:2px;background:var(--surface2);padding:3px;border-radius:calc(var(--r) - 2px);margin-left:auto}
+.demo .tabs i{font-style:normal;padding:5px 10px;border-radius:calc(var(--r) - 4px);font-size:12px;font-weight:600;color:var(--muted)}
+.demo .tabs i.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
+.demo .cards{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:13px}
+.demo .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--pad);box-shadow:var(--shadow)}
+.demo .kpi .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:700}
+.demo .kpi .v{font-size:24px;font-weight:700;letter-spacing:-.02em;margin-top:3px;
+  font-family:var(--num);font-feature-settings:var(--numFeat)}
+.demo .kpi .v small{font-size:12px;color:var(--muted);font-weight:600}
+.demo .kpi .d{font-size:11px;color:var(--muted);margin-top:2px}
+.demo .meter{height:6px;border-radius:3px;background:var(--surface2);margin-top:8px;overflow:hidden;display:flex}
+.demo .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;margin-bottom:13px}
+.demo .panel>h4{margin:0;padding:11px var(--pad);border-bottom:1px solid var(--line);font-size:12.5px;
+  font-weight:var(--headWeight);letter-spacing:var(--headTrack)}
+.demo .panel>.body{padding:var(--pad)}
+.demo .brow{display:grid;grid-template-columns:66px 1fr 40px;gap:9px;align-items:center;margin-bottom:6px;font-size:11.5px}
+.demo .brow .track{display:flex;height:15px;border-radius:4px;overflow:hidden;background:var(--surface2)}
+.demo .brow .track b{display:block;height:100%}
+.demo .brow .amt{text-align:right;font-weight:650;font-family:var(--num);font-feature-settings:var(--numFeat)}
+.demo .legend{display:flex;gap:12px;font-size:11px;color:var(--muted);margin-top:9px}
+.demo .legend span{display:flex;align-items:center;gap:5px}
+.demo .legend u{width:9px;height:9px;border-radius:2px;display:block;text-decoration:none}
+.demo .days{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden;background:var(--surface);box-shadow:var(--shadow);margin-bottom:13px}
+.demo .day{padding:7px;border-right:1px solid var(--line);min-height:74px}
+.demo .day:last-child{border-right:0}
+.demo .day .dn{font-size:11px;font-weight:650;color:var(--muted);margin-bottom:4px}
+.demo .chip{display:flex;align-items:center;gap:4px;font-size:10.5px;padding:2px 5px;border-radius:4px;
+  margin-bottom:3px;border-left:3px solid;font-weight:550;white-space:nowrap}
+.demo .chip.l{background:var(--leaveBg);color:var(--leave);border-color:var(--leave)}
+.demo .chip.w{background:var(--wfhBg);color:var(--wfh);border-color:var(--wfh)}
+.demo .chip.pend{border-left-style:dashed}
+.demo table{width:100%;border-collapse:collapse;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.demo th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);
+  padding:8px var(--pad);border-bottom:1px solid var(--line);font-weight:700}
+.demo td{padding:9px var(--pad);border-bottom:1px solid var(--line);font-size:12px}
+.demo tr:last-child td{border-bottom:0}
+.demo td.n{font-family:var(--num);font-feature-settings:var(--numFeat);font-weight:650}
+.demo .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700}
+.demo .pill.ok{background:var(--okBg);color:var(--ok)}
+.demo .pill.pd{background:var(--warnBg);color:var(--warn)}
+.demo .who{display:flex;align-items:center;gap:7px}
+.demo .av{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;
+  font-size:9px;font-weight:700;color:#fff;background:var(--c1)}
+
+/* ---------- 1. COLOUR ---------- */
+.t-warm{
+  --bg:#f7f4ef; --surface:#fffdf9; --surface2:#f0ebe2; --line:#e3dccf;
+  --text:#241f1a; --muted:#6b6157; --faint:#9a8f82;
+  --leave:#a63d1f; --leaveBg:#f9e4d8; --wfh:#0f6b6b; --wfhBg:#d6ecec;
+  --ok:#3f6b2e; --okBg:#e4eeda; --warn:#8a6314; --warnBg:#f7ead0;
+  --accent:#a63d1f; --c1:#0f6b6b; --c4:#a63d1f;
+  --shadow:0 1px 2px rgba(60,45,30,.07);
+}
+/* ---------- 2. TYPOGRAPHY ---------- */
+.f-inter{
+  --ui:"Inter",system-ui,sans-serif;
+  --num:"JetBrains Mono",ui-monospace,monospace;
+  --numFeat:normal; --headWeight:600; --headTrack:-.015em;
+}
+.f-inter .kpi .v{letter-spacing:-.04em}
+.f-inter .brandname{letter-spacing:-.03em}
+/* ---------- 3. SHAPE & DENSITY ---------- */
+.s-flat{
+  --r:4px; --pad:9px; --shadow:none;
+}
+.s-flat .day{min-height:54px}
+.s-flat .kpi .v{font-size:20px;margin-top:1px}
+.s-flat .kpi .d{margin-top:1px}
+.s-flat .meter{margin-top:5px;height:4px}
+.s-flat .bar{margin-bottom:7px;padding:6px var(--pad)}
+.s-flat .panel,.s-flat table,.s-flat .days,.s-flat .cards{margin-bottom:7px}
+.s-flat .cards{gap:7px}
+.s-flat .brow{margin-bottom:3px}
+.s-flat .brow .track{height:12px;border-radius:2px}
+.s-flat .panel>h4{padding:7px var(--pad)}
+.s-flat .panel>.body{padding:var(--pad)}
+.s-flat th{padding:5px var(--pad)}
+.s-flat td{padding:5px var(--pad)}
+.s-flat .legend{margin-top:6px}
+.s-flat .chip{margin-bottom:2px;padding:1px 5px}
+.s-flat .av{width:18px;height:18px;font-size:8px}
+/* ---------- 4. CHART STYLE ---------- */
+.c-outline .brow .track{background:transparent;box-shadow:inset 0 0 0 1px var(--line);border-radius:3px}
+.c-outline .brow .track b{opacity:.28}
+.c-outline .brow .track b:first-child{opacity:1}
+.c-outline .meter{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.c-outline .legend{display:none}
+.c-outline .brow{grid-template-columns:66px 1fr 78px}
+.c-outline .brow .amt{font-size:10.5px;color:var(--muted);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="lede">
+  <h1>Style options for WFS Tracker</h1>
+  <p>Four decisions, two options each. Every tile below is live HTML rendered with the app's real
+     component vocabulary — top bar, KPI cards, a stacked bar chart, calendar chips and a table —
+     so you're judging the actual thing, not a mood board.</p>
+  <p>Each pair changes <b>only</b> that one dimension; everything else is held at the current
+     baseline. Pick one per question and they combine — e.g. <i>Warm Paper + Inter + Flat + Outline</i>.</p>
+</div>
+
+<!-- ============ 1. COLOUR ============ -->
+<div class="q">
+  <div class="n">Question 1 of 4</div>
+  <h2>Colour direction</h2>
+  <p>How the whole thing feels, and how Leave and WFH read against each other.</p>
+</div>
+<div class="pair">
+  <div class="opt">
+    <header><b>Option A — Cool Slate</b><span class="tag">current</span>
+      <span>Cool grey-blue neutrals. Amber leave, indigo WFH.</span></header>
+    <div class="stage demo"><div id="A1"></div></div>
+    <div class="verdict"><b>Reads as:</b> standard enterprise analytics. Highest contrast of the two,
+      strongest Leave/WFH separation, safest on a projector.</div>
+  </div>
+  <div class="opt">
+    <header><b>Option B — Warm Paper</b>
+      <span>Ivory and sand neutrals, ink-brown text. Terracotta leave, teal WFH.</span></header>
+    <div class="stage demo t-warm"><div id="B1"></div></div>
+    <div class="verdict"><b>Reads as:</b> calmer and more editorial, easier on the eyes for long
+      sessions. Slightly lower contrast, and less shouty about status colours.</div>
+  </div>
+</div>
+
+<!-- ============ 2. TYPE ============ -->
+<div class="q">
+  <div class="n">Question 2 of 4</div>
+  <h2>Typography</h2>
+  <p>Mostly about how the numbers read, since this is a dashboard.</p>
+</div>
+<div class="pair">
+  <div class="opt">
+    <header><b>Option A — Native System</b><span class="tag">current</span>
+      <span>Segoe UI / system-ui throughout, with tabular figures.</span></header>
+    <div class="stage demo"><div id="A2"></div></div>
+    <div class="verdict"><b>Trade-off:</b> zero network load, looks native on every machine, and
+      matches the rest of your Windows tooling. Least distinctive.</div>
+  </div>
+  <div class="opt">
+    <header><b>Option B — Inter + JetBrains Mono</b>
+      <span>Inter for the interface, monospace for every number and date.</span></header>
+    <div class="stage demo f-inter"><div id="B2"></div></div>
+    <div class="verdict"><b>Trade-off:</b> figures line up in perfect columns and headings get
+      tighter — more "product", less "spreadsheet". Costs a webfont download.</div>
+  </div>
+</div>
+
+<!-- ============ 3. SHAPE ============ -->
+<div class="q">
+  <div class="n">Question 3 of 4</div>
+  <h2>Shape &amp; density</h2>
+  <p>How much fits on one screen before you scroll.</p>
+</div>
+<div class="pair">
+  <div class="opt">
+    <header><b>Option A — Soft Cards</b><span class="tag">current</span>
+      <span>10px corners, soft shadows, generous padding.</span></header>
+    <div class="stage demo"><div id="A3"></div></div>
+    <div class="verdict"><b>Trade-off:</b> airy and modern, easy to scan card by card. Costs
+      vertical space — the dashboards scroll more.</div>
+  </div>
+  <div class="opt">
+    <header><b>Option B — Flat Grid</b>
+      <span>4px corners, no shadows, hairline rules, tighter padding.</span></header>
+    <div class="stage demo s-flat"><div id="B3"></div></div>
+    <div class="verdict"><b>Trade-off:</b> fits about <b>24% more per screen</b> (measured against
+      the tile on the left) and feels closer to the sheet you're migrating from. Denser, so
+      slightly more work to scan.</div>
+  </div>
+</div>
+
+<!-- ============ 4. CHARTS ============ -->
+<div class="q">
+  <div class="n">Question 4 of 4</div>
+  <h2>Chart style</h2>
+  <p>Applies to the bar, column and line charts across all three dashboard tabs.</p>
+</div>
+<div class="pair">
+  <div class="opt">
+    <header><b>Option A — Filled Solid</b><span class="tag">current</span>
+      <span>Every series solid, colour legend underneath.</span></header>
+    <div class="stage demo"><div id="A4"></div></div>
+    <div class="verdict"><b>Trade-off:</b> all four leave categories are equally visible at once —
+      best when you're comparing the mix. Busier, and colour does all the work.</div>
+  </div>
+  <div class="opt">
+    <header><b>Option B — Outline &amp; Accent</b>
+      <span>Lead series solid, the rest ghosted; values labelled inline, no legend.</span></header>
+    <div class="stage demo c-outline"><div id="B4"></div></div>
+    <div class="verdict"><b>Trade-off:</b> pushes one number forward per row so the ranking is
+      instant, and survives greyscale printing. Harder to compare the smaller categories.</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+/* One markup generator, rendered into every tile. Placeholder names on purpose. */
+var PEOPLE = [['AK','A. Kulkarni',31,18],['RM','R. Menon',29.5,16],['SD','S. Desai',21.5,12]];
+
+function block(){
+  var rows = PEOPLE.map(function(p){
+    var tot = p[2];
+    return '<div class="brow"><span>'+p[1]+'</span>'
+      + '<span class="track">'
+      +   '<b style="width:'+(tot*0.55/31*100)+'%;background:var(--c1)"></b>'
+      +   '<b style="width:'+(tot*0.30/31*100)+'%;background:var(--c4)"></b>'
+      +   '<b style="width:'+(tot*0.09/31*100)+'%;background:var(--wfh)"></b>'
+      +   '<b style="width:'+(tot*0.06/31*100)+'%;background:var(--leave)"></b>'
+      + '</span>'
+      + '<span class="amt">'+tot+'d</span></div>';
+  }).join('');
+
+  return ''
+  + '<div class="bar"><span class="brandmark">W</span><span class="brandname">WFS Tracker</span>'
+  +   '<span class="tabs"><i class="on">Leave</i><i>WFH</i><i>Combined</i></span></div>'
+
+  + '<div class="cards">'
+  +   '<div class="kpi"><div class="k">Total leave days</div><div class="v">158.5 <small>d</small></div>'
+  +     '<div class="d">5.1% of 3,132 person-days</div>'
+  +     '<div class="meter"><b style="width:26%;height:100%;background:var(--leave)"></b></div></div>'
+  +   '<div class="kpi"><div class="k">Unplanned</div><div class="v">65.5 <small>d</small></div>'
+  +     '<div class="d">41.3% of all leave · called in</div>'
+  +     '<div class="meter"><b style="width:41%;height:100%;background:var(--c4)"></b></div></div>'
+  + '</div>'
+
+  + '<div class="panel"><h4>Leave days per person</h4><div class="body">' + rows
+  +   '<div class="legend">'
+  +     '<span><u style="background:var(--c1)"></u>Planned</span>'
+  +     '<span><u style="background:var(--c4)"></u>Unplanned</span>'
+  +     '<span><u style="background:var(--wfh)"></u>Planned ½</span>'
+  +     '<span><u style="background:var(--leave)"></u>Unplanned ½</span>'
+  +   '</div></div></div>'
+
+  + '<div class="days">'
+  +   '<div class="day"><div class="dn">17</div>'
+  +     '<div class="chip l">🌴 A. Kulkarni</div><div class="chip l">🌴 S. Desai</div></div>'
+  +   '<div class="day"><div class="dn">18</div>'
+  +     '<div class="chip l">🌴 R. Menon</div><div class="chip w">🏠 S. Desai</div></div>'
+  +   '<div class="day"><div class="dn">19</div>'
+  +     '<div class="chip w">🏠 A. Kulkarni</div><div class="chip l pend">🌴 R. Menon</div></div>'
+  + '</div>'
+
+  + '<table><thead><tr><th>Team member</th><th>Dates</th><th>Days</th><th>Status</th></tr></thead><tbody>'
+  +   '<tr><td><span class="who"><span class="av">AK</span>A. Kulkarni</span></td>'
+  +     '<td>17–18 Sep 2026</td><td class="n">2.0</td><td><span class="pill ok">Approved</span></td></tr>'
+  +   '<tr><td><span class="who"><span class="av" style="background:var(--c4)">RM</span>R. Menon</span></td>'
+  +     '<td>24 Nov – 4 Dec</td><td class="n">9.0</td><td><span class="pill pd">Pending</span></td></tr>'
+  + '</tbody></table>';
+}
+
+['A1','B1','A2','B2','A3','B3','A4','B4'].forEach(function(id){
+  document.getElementById(id).innerHTML = block();
+});
+</script>
+</body>
+</html>
