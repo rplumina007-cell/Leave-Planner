@@ -7,7 +7,7 @@
   var view = { kind: 'leave', person: 'all', status: 'all', q: '', sort: 'from', dir: -1 };
 
   function rows() {
-    var list = S.all(view.kind);
+    var list = S.visible(view.kind);
     if (view.person !== 'all') list = list.filter(function (r) { return r.name === view.person; });
     if (view.status !== 'all') list = list.filter(function (r) { return r.status === view.status; });
     if (view.q) {
@@ -43,10 +43,10 @@
         el('div', { class: 'tabs' }, [
           el('button', {
             class: view.kind === 'leave' ? 'on' : '', onclick: function () { view.kind = 'leave'; W.app.rerender(); }
-          }, ['🌴 Leave', el('span', { class: 'count', text: String(S.state.leave.length) })]),
+          }, ['🌴 Leave', el('span', { class: 'count', text: String(S.visible('leave').length) })]),
           el('button', {
             class: view.kind === 'wfh' ? 'on' : '', onclick: function () { view.kind = 'wfh'; W.app.rerender(); }
-          }, ['🏠 WFH', el('span', { class: 'count', text: String(S.state.wfh.length) })])
+          }, ['🏠 WFH', el('span', { class: 'count', text: String(S.visible('wfh').length) })])
         ]),
         el('span', { style: 'flex:1' }),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Search', el('input', {
@@ -54,7 +54,7 @@
           oninput: function (e) { view.q = e.target.value; W.app.rerender(); }
         })]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Member',
-          sel('person', [{ v: 'all', t: 'Everyone' }].concat(S.state.people.map(function (p) { return { v: p.name, t: p.name }; })))]),
+          sel('person', [{ v: 'all', t: S.is('admin') ? 'Everyone' : 'My team' }].concat(S.teamPeople().map(function (p) { return { v: p.name, t: p.name }; })))]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Status',
           sel('status', [{ v: 'all', t: 'All' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }, { v: 'Declined', t: 'Declined' }])]),
         el('button', { class: 'btn', text: '⬇ CSV', onclick: function () { exportCSV(list, cols); } })
@@ -92,7 +92,7 @@
                 el('td', {}, [el('span', { class: 'pill ' + r.status, text: r.status })]),
                 el('td', { class: 'sub', text: r.comment || '—' }),
                 el('td', { style: 'text-align:right' }, [
-                  S.is('admin') ? el('button', {
+                  r.canDelete ? el('button', {
                     class: 'btn sm', text: '✕', title: 'Delete record',
                     onclick: function () {
                       if (confirm('Delete this ' + view.kind + ' record for ' + r.name + '?')) {

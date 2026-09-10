@@ -17,7 +17,7 @@
     'var(--c4)', 'var(--c3)'];
 
   function defaults() {
-    var all = S.state.leave.concat(S.state.wfh).map(function (r) { return U.monthKey(r.from); }).sort();
+    var all = S.visible('leave').concat(S.visible('wfh')).map(function (r) { return U.monthKey(r.from); }).sort();
     view.from = view.from || all[0] || U.todayISO().slice(0, 7);
     view.to = view.to || all[all.length - 1] || U.todayISO().slice(0, 7);
   }
@@ -141,7 +141,7 @@
     }
     var person = el('select', {
       onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
-    }, [{ v: 'all', t: 'Whole team' }].concat(S.state.people.map(function (p) { return { v: p.name, t: p.name }; }))
+    }, [{ v: 'all', t: S.is('admin') ? 'Whole team' : 'My team' }].concat(S.teamPeople().map(function (p) { return { v: p.name, t: p.name }; }))
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
 
     return el('div', { class: 'card', style: 'margin-bottom:18px' }, [

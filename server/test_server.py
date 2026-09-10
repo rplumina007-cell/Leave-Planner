@@ -140,6 +140,13 @@ def main():
     s, st = admin.req("GET", "/api/state")
     check("admin sees full state + audit + team", s == 200 and "audit" in st and "team" in st and len(st["leave"]) > 100, s)
     check("admin sees people without logins", len(st.get("unregistered", [])) >= 12, len(st.get("unregistered", [])))
+    check("admin can file for everyone listed", len(st["people"]) >= 13 and all(p["full"] and p["canApply"] for p in st["people"]))
+    s, b = admin.req("POST", "/api/requests", {"kind": "wfh", "forEmpId": "P001", "from": "2026-10-19", "to": "2026-10-19",
+                                               "duration": "Full Day", "reason": "Personal Work"})
+    filed = [r for r in b.get("state", {}).get("wfh", []) if r["id"] == b.get("id")]
+    check("admin files WFH for someone with no login", s == 200 and filed and filed[0]["name"] == "Sample Person B", b)
+    check("admin can't file for an unknown ID", admin.req("POST", "/api/requests", {"kind": "wfh", "forEmpId": "ZZZ", "from": "2026-10-19",
+                                                                                   "duration": "Full Day", "reason": "Personal Work"})[0] == 400)
 
     print("\n-- admin creates logins and managers")
     mk = lambda emp, name, role, mgr=None: admin.req("POST", "/api/users", {
@@ -162,6 +169,7 @@ def main():
     check("employee sees team calendar", s == 200 and len(others) > 100)
     check("colleagues' reasons/comments hidden", all(r["reason"] is None and r["comment"] == "" and r.get("redacted") for r in others))
     check("no audit, team or manager data for employee", "audit" not in st and "team" not in st)
+    check("employee can only file for themselves", [p["empId"] for p in st["people"] if p["canApply"]] == ["E1"])
     req = {"kind": "leave", "from": "2026-10-12", "to": "2026-10-13", "duration": "Full Day", "reason": "Planned Leave"}
     s, b = e1.req("POST", "/api/requests", req)
     check("employee submits own leave", s == 200, b)
@@ -195,10 +203,21 @@ def main():
     check("M2 approves E2", decide(m2, e2_id)[0] == 200)
     check("M1 declines E1 with note", m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})[0] == 200)
     s, st = m1.req("GET", "/api/state")
-    check("manager sees full details + canDecide flags", s == 200 and not any(r.get("redacted") for r in st["leave"]) and "team" in st)
+    full = {r["empId"] for r in st["leave"] if not r.get("redacted")}
+    hidden = [r for r in st["leave"] if r["empId"] not in ("M1", "M2", "E1")]
+    check("manager sees own team in full (self + assigned)", s == 200 and full == {"M2", "E1"} and all("canDecide" in r for r in st["leave"] if r["empId"] in full), full)
+    check("manager sees everyone else without details", hidden and all(r.get("redacted") and r["reason"] is None for r in hidden))
+    check("manager's team list is only their own team", sorted(u["empId"] for u in st.get("team", [])) == ["E1", "M1", "M2"], st.get("team"))
+    check("manager can file for self + assigned people only",
+          sorted(p["empId"] for p in st["people"] if p["canApply"]) == ["E1", "M1", "M2"])
+    s, b = m1.req("POST", "/api/requests", dict(req, forEmpId="E1", **{"from": "2026-10-21", "to": "2026-10-21"}))
+    check("manager files leave for someone assigned to them", s == 200, b)
+    check("manager deletes a record of someone assigned to them", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": b.get("id")})[0] == 200)
+    check("manager can't file for someone not assigned (E2 -> M2)", m1.req("POST", "/api/requests", dict(req, forEmpId="E2"))[0] == 403)
+    check("manager can't file for someone with no login", m1.req("POST", "/api/requests", dict(req, forEmpId="P001"))[0] == 403)
     pend = [r for r in st["leave"] if r["status"] == "Pending" and r["empId"] not in ("E1", "E2", "M1", "M2")]
     check("manager can't decide someone not assigned to them", pend and decide(m1, pend[0]["id"])[0] == 403)
-    check("manager can't delete records", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 403)
+    check("manager can't delete records outside their team", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 403)
     check("manager can't manage users", m1.req("POST", "/api/users/update", {"empId": "E1", "role": "admin"})[0] == 403)
     check("admin decides anyone's request", decide(admin, pend[0]["id"])[0] == 200)
     check("admin can revoke a decision", decide(admin, m2_id, "Declined")[0] == 200)

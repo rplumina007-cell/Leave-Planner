@@ -140,7 +140,7 @@
         el('div', { class: 'legend' }, [
           el('span', {}, [el('b', { style: 'background:var(--bk-p)' }), '🌴 Planned leave']),
           el('span', {}, [el('b', { style: 'background:var(--bk-u)' }), '🌴 Unplanned leave']),
-          S.is('employee') ? el('span', {}, [el('b', { style: 'background:var(--leave)' }), '🌴 Colleague on leave']) : null,
+          S.is('admin') ? null : el('span', {}, [el('b', { style: 'background:var(--leave)' }), '🌴 Colleague on leave']),
           el('span', {}, [el('b', { style: 'background:var(--wfh)' }), '🏠 Work from home']),
           el('span', { style: 'color:var(--faint)', text: '⌐ dashed border = awaiting approval' }),
           el('span', { style: 'color:var(--faint)', text: '½AM / ½PM = half day' })
@@ -155,15 +155,20 @@
   function sidebar(index, year, mon) {
     var out = el('div', { class: 'grid' });
 
+    /* With a member picked in the filter, the form opens for them - if this user may file for them. */
+    function prefill() {
+      var p = S.applyPeople().filter(function (x) { return x.name === view.person; })[0];
+      return { from: view.selected || undefined, empId: p ? p.empId : undefined };
+    }
     out.appendChild(el('div', { class: 'card' }, [
       el('div', { class: 'card-b', style: 'display:flex;gap:9px' }, [
         el('button', {
           class: 'btn primary', style: 'flex:1', text: '🌴 Apply leave',
-          onclick: function () { W.form.open('leave', { from: view.selected || undefined }); }
+          onclick: function () { W.form.open('leave', prefill()); }
         }),
         el('button', {
           class: 'btn', style: 'flex:1', text: '🏠 Apply WFH',
-          onclick: function () { W.form.open('wfh', { from: view.selected || undefined }); }
+          onclick: function () { W.form.open('wfh', prefill()); }
         })
       ])
     ]));

@@ -17,12 +17,13 @@
     var reasons = kind === 'leave' ? v.leaveReasons : v.wfhReasons;
     var today = U.todayISO();
 
-    /* Only an admin files on someone else's behalf; everyone else is fixed to
-       themselves (the server enforces the same rule). */
+    /* An admin files for anyone, a manager for themselves and their team, an
+       employee only for themselves (the server enforces the same rule). */
     var me = S.me();
-    var canPickAnyone = me.role === 'admin';
+    var choices = S.applyPeople();
+    var canPickAnyone = choices.length > 1;
     var fName = canPickAnyone
-      ? el('select', { name: 'empId', required: true }, S.state.people.map(function (p) {
+      ? el('select', { name: 'empId', required: true }, choices.map(function (p) {
           return el('option', { value: p.empId, selected: p.empId === (prefill.empId || me.empId) || null, text: p.name + ' · ' + p.empId });
         }))
       : el('input', { name: 'empId', value: me.name + ' · ' + me.empId, disabled: true });
@@ -38,7 +39,7 @@
       var half = fDur.value.indexOf('Half') === 0;
       return {
         empId: canPickAnyone ? fName.value : me.empId,
-        name: canPickAnyone ? (S.state.people.filter(function (p) { return p.empId === fName.value; })[0] || {}).name : me.name,
+        name: canPickAnyone ? (choices.filter(function (p) { return p.empId === fName.value; })[0] || {}).name : me.name,
         from: fFrom.value, to: half ? fFrom.value : fTo.value,
         duration: fDur.value, reason: fReason.value, comment: fComment.value.trim(),
         id: '__draft__'
@@ -127,7 +128,8 @@
       btn.disabled = true;
       S.submit(kind, d).then(function () {
         close();
-        U.toast((kind === 'leave' ? 'Leave' : 'WFH') + ' request submitted — pending approval');
+        U.toast((kind === 'leave' ? 'Leave' : 'WFH') + ' request submitted' +
+          (d.empId === me.empId ? '' : ' for ' + d.name) + ' — pending approval');
       }, function (err) {
         btn.disabled = false;
         U.clear(warn);

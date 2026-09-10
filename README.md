@@ -47,15 +47,17 @@ change their password later with the 🔑 button.
 
 | | Employee | Manager | Admin |
 | --- | --- | --- | --- |
-| Calendar | ✓ — colleagues' reasons/comments hidden | ✓ full | ✓ full |
-| Apply leave / WFH | for themselves | for themselves | for anyone |
-| Approvals | — | requests from people assigned to them (never their own) | every request |
-| Dashboards, Register | — | ✓ | ✓ |
-| Delete records | withdraw own pending | — | ✓ |
+| Calendar | ✓ — colleagues' reasons/comments hidden | ✓ — full for their team, others' details hidden | ✓ full |
+| Apply leave / WFH | for themselves | for themselves and their team | for anyone, including people without a login |
+| Approvals | — | their team's requests (never their own) | every request |
+| Dashboards, Register | — | their team | everyone |
+| Delete records | withdraw own pending | their team's records; own pending | ✓ |
 | Settings (users, roles, managers, dropdowns, cleanup, sheet sync) | — | — | ✓ |
 
-Managers can be assigned to other managers, so approvals follow the chain. Every
-rule is enforced by the server (`server/api.py`), not just hidden in the page.
+A manager's **team** is themselves plus the people assigned directly to them.
+Managers can be assigned to other managers, so approvals follow the chain; people
+assigned to a manager lower down belong to that manager's team. Every rule is
+enforced by the server (`server/api.py`), not just hidden in the page.
 
 **Security**
 - Passwords are stored as scrypt hashes; sessions are random tokens stored hashed,

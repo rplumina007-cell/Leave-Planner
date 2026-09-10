@@ -2,9 +2,12 @@
 
 Roles:
   employee  apply/withdraw own requests; calendar with colleagues' details hidden
-  manager   + decide requests from people assigned to them (never their own),
-            full calendar, dashboards and register
-  admin     + everything: any request, users, roles, manager assignments, settings
+  manager   full access to themselves and the people assigned to them: apply on
+            their behalf, decide their requests (never their own), delete their
+            records, and see them in full on the calendar, dashboards and
+            register. Everyone else shows on the calendar only, details hidden.
+  admin     full access to everyone - including people who have records but no
+            login yet - plus users, roles, manager assignments and settings
 """
 import os
 import re
@@ -43,7 +46,8 @@ def state_payload(app, user):
     out = domain.view_for(st, user, users)
     out["me"] = public_user(user)
     if user["role"] in ("manager", "admin"):
-        out["team"] = [public_user(u) for u in users.values()]
+        team = domain.team_of(user, users)
+        out["team"] = [public_user(u) for u in users.values() if team is None or u["emp_id"] in team]
     if user["role"] == "admin":
         h = domain.load_seed(app.seed_path)[1] if os.path.exists(app.seed_path) else None
         out["seedIsNewer"] = bool(h) and h != st.get("seedHash")
@@ -114,15 +118,18 @@ def submit_request(app, body, ctx):
     user = ctx["user"]
     need(user)
     for_emp = str(body.get("forEmpId") or user["emp_id"])
-    if for_emp != user["emp_id"] and user["role"] != "admin":
-        raise ApiError(403, "You can only submit requests for yourself")
-    owner = app.db.user(for_emp)
-    if not owner or not owner["active"]:
-        raise ApiError(400, "That team member has no active login")
+    users = app.db.users()
+    if not domain.can_file_for(user, for_emp, users):
+        raise ApiError(403, "You can only submit requests for yourself" if user["role"] == "employee"
+                       else "You can only submit requests for yourself or people assigned to you")
     kind = body.get("kind")
 
     def fn(st):
-        rec = domain.build_request(st, kind, body, owner)
+        # An admin may file for someone who only exists in the records (no login yet).
+        name = (users.get(for_emp) or {}).get("name") or domain.roster(st, users).get(for_emp)
+        if not name:
+            raise ApiError(400, "Unknown team member")
+        rec = domain.build_request(st, kind, body, {"emp_id": for_emp, "name": name})
         st[kind].insert(0, rec)
         domain.log(st, "submitted", kind, rec["id"], rec["name"], user["name"])
         return rec["id"]
@@ -154,15 +161,16 @@ def decide_request(app, body, ctx):
 def delete_request(app, body, ctx):
     user = ctx["user"]
     need(user)
+    users = app.db.users()
 
     def fn(st):
         kind = body.get("kind")
         rec = domain.find(st, kind, body.get("id"))
-        own_pending = rec.get("empId") == user["emp_id"] and rec.get("status") == "Pending"
-        if user["role"] != "admin" and not own_pending:
-            raise ApiError(403, "Only an admin can delete this record")
+        if not domain.can_delete(user, rec, users):
+            raise ApiError(403, "Only an admin or %s's manager can delete this record" % rec["name"])
         st[kind] = [r for r in st[kind] if r is not rec]
-        domain.log(st, "deleted" if user["role"] == "admin" else "withdrawn", kind, rec["id"], rec["name"], user["name"])
+        own = rec.get("empId") == user["emp_id"] and rec.get("status") == "Pending"
+        domain.log(st, "withdrawn" if own else "deleted", kind, rec["id"], rec["name"], user["name"])
     app.db.mutate(fn)
     return {"state": state_payload(app, user)}, []
 

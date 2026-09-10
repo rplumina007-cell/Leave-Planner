@@ -33,7 +33,8 @@
 
   function compute(opts) {
     var o = opts || {};
-    var st = S.state;
+    /* Only what this user has full access to: everyone for an admin, a manager's team. */
+    var st = { leave: S.visible('leave'), wfh: S.visible('wfh'), people: S.teamPeople() };
     var months = monthSpan(o.from, o.to);
     var leave = st.leave.filter(function (r) { return inScope(r, o); });
     var wfh = st.wfh.filter(function (r) { return inScope(r, o); });

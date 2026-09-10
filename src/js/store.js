@@ -79,6 +79,12 @@
 
   /* ---------- queries ---------- */
   function all(kind) { return state[kind].slice(); }
+  /* Records this user has full access to - everyone for an admin, a manager's own
+     team, an employee's own. The rest arrive redacted and belong on the calendar only. */
+  function visible(kind) { return state[kind].filter(function (r) { return !r.redacted; }); }
+  /* People this user has full access to, and people they may file requests for. */
+  function teamPeople() { return state.people.filter(function (p) { return p.full; }); }
+  function applyPeople() { return state.people.filter(function (p) { return p.canApply; }); }
   function both() {
     return state.leave.map(tagKind('leave')).concat(state.wfh.map(tagKind('wfh')));
   }
@@ -216,7 +222,7 @@
     me: me, role: role, is: is,
     BUCKETS: BUCKETS, PLANNED_REASONS: PLANNED_REASONS, EDITABLE_LISTS: EDITABLE_LISTS, UNITS: UNITS,
     isPlanned: isPlanned, isHalf: isHalf, bucketOf: bucketOf, expand: expand, computeDays: computeDays,
-    all: all, both: both, byDate: byDate, pending: pending, decided: decided, actionable: actionable,
+    all: all, visible: visible, teamPeople: teamPeople, applyPeople: applyPeople, both: both, byDate: byDate, pending: pending, decided: decided, actionable: actionable,
     clashes: clashes, selfConflict: selfConflict, usageOf: usageOf, optionUsage: optionUsage,
     cutoffFor: cutoffFor, previewPurge: previewPurge,
     seedIsNewer: function () { return !!state.seedIsNewer; },

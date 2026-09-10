@@ -241,6 +241,32 @@ def sync_from_seed(state, seed, seed_hash):
 
 
 # ---------------------------------------------------------------- permissions
+def team_of(viewer, users):
+    """Employee IDs the viewer has full access to, or None meaning everyone.
+    Admin: everyone. Manager: themselves plus the people assigned to them.
+    Employee: themselves."""
+    if viewer["role"] == "admin":
+        return None
+    ids = {viewer["emp_id"]}
+    if viewer["role"] == "manager":
+        ids.update(u["emp_id"] for u in users.values() if u.get("manager_emp_id") == viewer["emp_id"])
+    return ids
+
+
+def roster(state, users):
+    """Everyone the tracker knows, {emp_id: name}: active logins plus anyone with
+    records - so people from the sheet who have no login yet still count."""
+    out = {}
+    for kind in KINDS:
+        for r in state[kind]:
+            if r.get("empId"):
+                out.setdefault(r["empId"], r.get("name") or r["empId"])
+    for u in users.values():
+        if u["active"] or u["emp_id"] in out:
+            out[u["emp_id"]] = u["name"]
+    return out
+
+
 def can_decide(viewer, rec, users):
     """Admin: anything. Manager: requests from people assigned to them, never
     their own. Employee: nothing."""
@@ -252,21 +278,46 @@ def can_decide(viewer, rec, users):
     return bool(owner and owner.get("manager_emp_id") == viewer["emp_id"])
 
 
+def can_file_for(viewer, emp_id, users):
+    """Admin: anyone. Manager: themselves and active people assigned to them.
+    Employee: themselves."""
+    if emp_id == viewer["emp_id"] or viewer["role"] == "admin":
+        return True
+    owner = users.get(emp_id)
+    return bool(viewer["role"] == "manager" and owner and owner["active"]
+                and owner.get("manager_emp_id") == viewer["emp_id"])
+
+
+def can_delete(viewer, rec, users):
+    """Admin: any record. Manager: any record of people assigned to them.
+    Everyone: withdraw their own request while it is still pending."""
+    if viewer["role"] == "admin":
+        return True
+    if rec.get("empId") == viewer["emp_id"]:
+        return rec.get("status") == "Pending"
+    return can_decide(viewer, rec, users)
+
+
 def view_for(state, viewer, users):
-    """The slice of state a viewer may see. Employees get the team calendar but
-    only their own details: reasons, comments and approver are stripped from
-    colleagues' records (the reason also drives the planned/unplanned colour,
-    so it has to go too)."""
+    """The slice of state a viewer may see. Everyone gets the whole calendar, but
+    details only for the people they have full access to (see team_of): reasons,
+    comments and approver are stripped from everyone else's records (the reason
+    also drives the planned/unplanned colour, so it has to go too)."""
+    team = team_of(viewer, users)
+    full = lambda emp_id: team is None or emp_id in team
     out = {k: state[k] for k in ("validation", "plannedReasons", "seedGeneratedAt")}
-    out["people"] = [{"empId": u["emp_id"], "name": u["name"]} for u in users.values() if u["active"]]
+    out["people"] = sorted(({"empId": emp_id, "name": name, "full": full(emp_id),
+                             "canApply": can_file_for(viewer, emp_id, users)}
+                            for emp_id, name in roster(state, users).items()),
+                           key=lambda p: p["name"].lower())
     for kind in KINDS:
         rows = []
         for r in state[kind]:
-            if viewer["role"] == "employee" and r.get("empId") != viewer["emp_id"]:
+            if not full(r.get("empId")):
                 r = {f: r.get(f) for f in ("id", "empId", "name", "from", "to", "duration", "days", "status")}
                 r.update(reason=None, comment="", redacted=True)
             else:
-                r = dict(r, canDecide=can_decide(viewer, r, users))
+                r = dict(r, canDecide=can_decide(viewer, r, users), canDelete=can_delete(viewer, r, users))
             rows.append(r)
         out[kind] = rows
     if viewer["role"] == "admin":

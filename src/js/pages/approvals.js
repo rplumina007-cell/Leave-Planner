@@ -22,7 +22,9 @@
 
     var filter = el('select', {
       onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
-    }, [{ v: 'all', t: 'All team members' }].concat(S.state.people.map(function (p) { return { v: p.name, t: p.name }; }))
+    }, [{ v: 'all', t: 'All team members' }].concat(S.teamPeople().filter(function (p) {
+      return S.is('admin') || p.empId !== S.me().empId;    // a manager never decides their own
+    }).map(function (p) { return { v: p.name, t: p.name }; }))
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
 
     var bar = el('div', { class: 'row', style: 'margin-bottom:16px' }, [
