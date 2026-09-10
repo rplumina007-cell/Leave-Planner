@@ -4,6 +4,9 @@ Everything else (logins, roles, managers) is done in the app: Settings -> Users.
     python server/manage.py create-admin --emp-id <employee ID> --name "<Full Name>"
     python server/manage.py reset-password --emp-id <employee ID>
     python server/manage.py list-users
+
+Add --live to act on the hosted (Neon) database instead of the local one. Its
+connection string comes from DATABASE_URL or a git-ignored .env.local file.
 """
 import argparse
 import os
@@ -28,8 +31,9 @@ def temp_password(emp_id, name):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="WFS Tracker admin tools")
-    ap.add_argument("--db", default=None)
+    ap = argparse.ArgumentParser(description="Leave Planner admin tools")
+    ap.add_argument("--db", default=None, help="local SQLite file (default: LOCALAPPDATA/WFSTracker/wfs.sqlite3)")
+    ap.add_argument("--live", action="store_true", help="use the hosted database (DATABASE_URL / .env.local)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("create-admin", help="create an admin login with a one-time password")
     c.add_argument("--emp-id", required=True)
@@ -39,8 +43,15 @@ def main(argv=None):
     sub.add_parser("list-users")
     args = ap.parse_args(argv)
 
-    db_path = args.db or config.default_db_path()
-    db = dbm.DB(db_path, config.SEED_PATH)
+    if args.live:
+        target = config.hosted_database_url()
+        if not target:
+            sys.exit("No hosted database configured: set DATABASE_URL or add it to .env.local")
+        where = "hosted database"
+    else:
+        target = args.db or config.default_db_path()
+        where = target
+    db = dbm.DB(target, None if args.live else config.SEED_PATH)
 
     if args.cmd == "create-admin":
         emp, name = args.emp_id.strip(), " ".join(args.name.split())
@@ -69,7 +80,7 @@ def main(argv=None):
             print("%-10s %-24s %-9s manager=%-10s %s%s" % (
                 u["emp_id"], u["name"], u["role"], u["manager_emp_id"] or "-",
                 "active" if u["active"] else "INACTIVE", "  (must change password)" if u["must_change"] else ""))
-    print("Database: %s" % db_path)
+    print("Database: %s" % where)
 
 
 if __name__ == "__main__":

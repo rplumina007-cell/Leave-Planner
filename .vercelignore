@@ -1,0 +1,14 @@
+# Never uploaded to Vercel, even when deploying straight from this folder.
+# Personal data and secrets:
+data/
+.env
+.env.*
+*.sqlite3
+*.sqlite3-*
+*.db
+# Not needed to run the site:
+tools/
+dist/
+.claude/
+design-options.html
+server/test_server.py

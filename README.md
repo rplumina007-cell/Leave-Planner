@@ -83,11 +83,48 @@ behind the company's existing sign-in.
 OneDrive folder, since a live database being synced mid-write can corrupt. Back
 it up from ⚙ → Data → Export.
 
-**Tests**: `python server/test_server.py` runs 82 end-to-end checks of the gateway
-and every role rule against a throwaway database and generated sample data — no
-imported sheet data needed.
+**Tests**: `python server/test_server.py` runs 85 end-to-end checks of the gateway,
+every role rule, and hosted behaviour (lockout shared across instances, Secure
+cookies behind HTTPS) against a throwaway database and generated sample data — no
+imported sheet data needed. Set `TEST_DATABASE_URL` to a throwaway Postgres
+database to run the same checks there.
 
-## Going live
+## Hosting on Vercel (free)
+
+The live site runs on Vercel's free plan with a free **Neon** Postgres database.
+Vercel runs `server/wsgi.py` (entrypoint set in `pyproject.toml`) — the same
+application as the local server — and keeps logins and records in Neon, since a
+Vercel function can't keep a database file between requests.
+
+**One-time setup**
+
+1. Vercel → *Add New → Project* → import the `Leave-Planner` GitHub repository.
+   No build settings are needed.
+2. In that project, *Storage* → create a **Neon** database and connect it to the
+   project. That adds `DATABASE_URL` to its environment variables. Redeploy once.
+3. Copy your current data across. Put the Neon connection string in a git-ignored
+   `.env.local` file as `DATABASE_URL=...` (or run `vercel env pull`), then:
+
+   ```bash
+   pip install "psycopg[binary]"
+   python tools/migrate-to-postgres.py          # dry run: shows what would be copied
+   python tools/migrate-to-postgres.py --yes    # copies every login and record
+   ```
+
+   Passwords are copied as hashes, so everyone keeps their current password.
+4. Open the project's `.vercel.app` address and sign in.
+
+Every push to `main` redeploys. On Vercel the server reads the visitor's address
+and HTTPS status from Vercel's own forwarding headers, marks the session cookie
+`Secure`, and stores login-failure counts in the database so the lockout holds
+across every running instance. Manage live accounts from your computer with
+`python server/manage.py --live list-users` (or `reset-password`), which reads
+`.env.local`.
+
+On the free plan the first request after a quiet spell takes a few seconds while
+the function and the database wake up.
+
+## Going live (other hosts)
 
 The repository deliberately contains no team data, so the live server needs it
 brought across. Pick one:

@@ -2,9 +2,13 @@
 
     python server/test_server.py
 
-Runs a real server on a spare port against a throwaway database and generated
-sample data, then drives it over HTTP exactly as a browser would. Needs no
-imported sheet data, and your real database is never touched.
+Runs the real application (server/wsgi.py - the same code Vercel runs) on a
+spare port against a throwaway SQLite database and generated sample data, then
+drives it over HTTP exactly as a browser would. Needs no imported sheet data,
+and your real database is never touched.
+
+To run the same checks against Postgres, point TEST_DATABASE_URL at a THROWAWAY
+database (e.g. a separate Neon branch) - its tables are dropped first.
 """
 import datetime
 import http.client
@@ -16,8 +20,10 @@ import tempfile
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import app as appmod  # noqa: E402
+import app as runner  # noqa: E402
+import db as dbm      # noqa: E402
 import domain         # noqa: E402
+import wsgi           # noqa: E402
 
 PASS, FAIL = [], []
 
@@ -89,11 +95,17 @@ def main():
     tmp = tempfile.mkdtemp()
     db_path = os.path.join(tmp, "test.sqlite3")
     seed_path = synthetic_seed(os.path.join(tmp, "seed.json"))
-    appmod.Handler.app = appmod.App(db_path, seed_path, secure=False)
-    srv = appmod.http.server.ThreadingHTTPServer(("127.0.0.1", 0), appmod.Handler)
+    pg_url = os.environ.get("TEST_DATABASE_URL")
+    target = pg_url or db_path
+    if pg_url:
+        print("Using Postgres from TEST_DATABASE_URL (tables will be dropped)")
+        with dbm.DB(pg_url).tx() as c:
+            c.execute("DROP TABLE IF EXISTS login_failures, sessions, state, users")
+    application = wsgi.App(target, seed_path)
+    srv = runner.serve(application, "127.0.0.1", 0)
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    db = appmod.Handler.app.db
+    db = application.db
     db.create_user("A1", "Ada Admin", "admin", "TempAdmin#2026", must_change=True)
 
     print("\n-- gateway & static files")
@@ -106,6 +118,7 @@ def main():
         check("never served: " + p, anon.req("GET", p, raw=True)[0] == 404)
     s, _, h = anon.req("GET", "/login.html", raw=True)
     check("security headers set", "default-src 'self'" in h.get("Content-Security-Policy", "") and h.get("X-Frame-Options") == "DENY")
+    check("health check answers", anon.req("GET", "/healthz", raw=True)[0] == 200)
     check("API refuses anonymous", anon.req("GET", "/api/state")[0] == 401)
     check("POST without custom header refused", anon.req("POST", "/api/login", {"empId": "A1", "password": "x"}, {"X-WFS-Request": ""})[0] == 403)
     check("cross-site Origin refused", anon.req("POST", "/api/login", {"empId": "A1", "password": "x"}, {"Origin": "http://evil.example"})[0] == 403)
@@ -217,13 +230,33 @@ def main():
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
 
     print("\n-- storage & brute force")
-    raw = open(db_path, "rb").read()
-    check("no plaintext passwords in the database", not any(p in raw for p in (b"Blue-Harbor-71", b"Harbor-Lamp-11", b"Start-Here-2026")))
+    if not pg_url:
+        raw = open(db_path, "rb").read()
+        check("no plaintext passwords in the database", not any(p in raw for p in (b"Blue-Harbor-71", b"Harbor-Lamp-11", b"Start-Here-2026")))
     check("passwords stored as scrypt hashes", all(u["pw_hash"].startswith("scrypt$") for u in db.users(include_hash=True).values()))
     atk = Client(port)
     for _ in range(5):
         atk.login("M1", "guess-guess")
     check("6th attempt locked out even with right password", atk.login("M1", "Silver-Pine-33")[0] == 429)
+
+    print()
+    print("-- hosted mode (behind a proxy, several instances sharing one database)")
+    # Two more instances on the same database, trusting forwarding headers the
+    # way they do on Vercel - so each check gets its own client address.
+    hosted = [runner.serve(wsgi.App(target, seed_path, trust_proxy=True), "127.0.0.1", 0) for _ in range(2)]
+    for h_srv in hosted:
+        threading.Thread(target=h_srv.serve_forever, daemon=True).start()
+    one, two = Client(hosted[0].server_address[1]), Client(hosted[1].server_address[1])
+    far = {"X-Forwarded-For": "203.0.113.9"}
+    for _ in range(5):
+        one.req("POST", "/api/login", {"empId": "M2", "password": "guess-guess"}, far)
+    s, _ = two.req("POST", "/api/login", {"empId": "M2", "password": "Amber-Rail-44"}, far)
+    check("lockout shared across server instances", s == 429, s)
+    s, _, h = one.req("POST", "/api/login", {"empId": "A1", "password": "Blue-Harbor-71"},
+                      {"X-Forwarded-For": "198.51.100.4", "X-Forwarded-Proto": "https"}, raw=True)
+    check("session cookie marked Secure behind HTTPS proxy", s == 200 and "Secure" in h.get("Set-Cookie", ""), (s, h.get("Set-Cookie")))
+    for h_srv in hosted:
+        h_srv.shutdown()
 
     srv.shutdown()
     shutil.rmtree(tmp, ignore_errors=True)

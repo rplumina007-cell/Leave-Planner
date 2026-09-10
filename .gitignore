@@ -17,3 +17,8 @@ data/sheet-id.txt
 # Local tooling and build output
 .claude/
 dist/
+.vercel/
+
+# Secrets - the hosted database connection string lives here
+.env
+.env.*

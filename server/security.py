@@ -3,7 +3,6 @@ import base64
 import hashlib
 import hmac
 import secrets
-import threading
 import time
 
 # scrypt cost: ~50ms per check on a laptop - negligible for a login, expensive
@@ -69,30 +68,20 @@ def token_hash(token):
 
 class LoginLimiter:
     """After 5 failures within 15 minutes, lock that employee ID and that address
-    for 15 minutes. In memory - resets when the server restarts."""
-    MAX, WINDOW, LOCK = 5, 15 * 60, 15 * 60
+    for 15 minutes. Failures are stored in the database so every server instance
+    shares one count - Vercel runs several at once."""
+    MAX, WINDOW = 5, 15 * 60
 
-    def __init__(self):
-        self._fails = {}
-        self._lock = threading.Lock()
-
-    def _key_locked(self, key, now):
-        times = [t for t in self._fails.get(key, []) if now - t < self.WINDOW]
-        self._fails[key] = times
-        return len(times) >= self.MAX and now - times[-1] < self.LOCK
+    def __init__(self, store):
+        self.store = store
 
     def blocked(self, *keys):
-        now = time.time()
-        with self._lock:
-            return any(self._key_locked(k, now) for k in keys)
+        since = time.time() - self.WINDOW
+        return any(self.store.failure_count(k, since) >= self.MAX for k in keys)
 
     def fail(self, *keys):
         now = time.time()
-        with self._lock:
-            for k in keys:
-                self._fails.setdefault(k, []).append(now)
+        self.store.add_failures(keys, now, prune_before=now - self.WINDOW)
 
     def clear(self, *keys):
-        with self._lock:
-            for k in keys:
-                self._fails.pop(k, None)
+        self.store.clear_failures(keys)

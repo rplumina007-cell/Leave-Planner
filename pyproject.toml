@@ -1,0 +1,11 @@
+[project]
+name = "leave-planner"
+version = "1.0.0"
+description = "Team leave and work-from-home tracker with sign-in and roles"
+requires-python = ">=3.12"
+# Only needed for the hosted (Postgres) database. Running locally on SQLite
+# needs nothing beyond the standard library.
+dependencies = ["psycopg[binary]>=3.2"]
+
+[tool.vercel]
+entrypoint = "server.wsgi:app"
