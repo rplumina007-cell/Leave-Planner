@@ -25,12 +25,14 @@ import security   # noqa: E402
 COOKIE = "wfs_session"
 MAX_BODY = 64 * 1024
 # Served without a session: just enough to draw the sign-in page.
-PUBLIC_FILES = {"/login.html", "/src/css/app.css", "/src/css/fonts.css", "/src/js/login.js"}
+PUBLIC_FILES = {"/login.html", "/src/css/app.css", "/src/css/fonts.css", "/src/js/login.js",
+                "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png"}
 # What the signed-in app needs. Anything not matched - data/, server/, tools/,
 # README - is never served, signed in or not.
 APP_PREFIXES = ("/src/js/", "/src/css/")
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-         ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
+         ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
+         ".svg": "image/svg+xml", ".ico": "image/x-icon", ".png": "image/png"}
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 

@@ -29,7 +29,7 @@
 
     var bar = el('div', { class: 'row', style: 'margin-bottom:16px' }, [
       tabs,
-      S.is('manager') ? el('span', { class: 'sub', text: 'Requests from people assigned to you' }) : null,
+      S.is('manager') ? el('span', { class: 'sub', text: 'Requests from your team' }) : null,
       el('span', { style: 'flex:1' }),
       el('label', { class: 'f', style: 'font-size:11px' }, ['Filter', filter])
     ]);

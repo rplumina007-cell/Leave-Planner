@@ -61,7 +61,7 @@
         }
       }),
       el('span', { style: 'flex:1' }),
-      ctl('Member', [{ v: 'all', t: 'Everyone' }].concat(S.state.people.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
+      ctl('Member', [{ v: 'all', t: S.is('manager') ? 'My team' : 'Everyone' }].concat(S.state.people.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
       ctl('Type', [{ v: 'both', t: 'Leave + WFH' }, { v: 'leave', t: 'Leave only' }, { v: 'wfh', t: 'WFH only' }], 'kind'),
       ctl('Status', [{ v: 'all', t: 'Approved + Pending' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }], 'status')
     ]);
@@ -140,7 +140,7 @@
         el('div', { class: 'legend' }, [
           el('span', {}, [el('b', { style: 'background:var(--bk-p)' }), '🌴 Planned leave']),
           el('span', {}, [el('b', { style: 'background:var(--bk-u)' }), '🌴 Unplanned leave']),
-          S.is('admin') ? null : el('span', {}, [el('b', { style: 'background:var(--leave)' }), '🌴 Colleague on leave']),
+          S.is('employee') ? el('span', {}, [el('b', { style: 'background:var(--leave)' }), '🌴 Colleague on leave']) : null,
           el('span', {}, [el('b', { style: 'background:var(--wfh)' }), '🏠 Work from home']),
           el('span', { style: 'color:var(--faint)', text: '⌐ dashed border = awaiting approval' }),
           el('span', { style: 'color:var(--faint)', text: '½AM / ½PM = half day' })

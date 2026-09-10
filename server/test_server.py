@@ -113,6 +113,9 @@ def main():
     s, _, h = anon.req("GET", "/", raw=True)
     check("signed-out / redirects to login", s == 302 and h.get("Location") == "/login.html", s)
     check("login page is public", anon.req("GET", "/login.html", raw=True)[0] == 200)
+    for p, ctype in (("/favicon.svg", "image/svg+xml"), ("/favicon.ico", "image/x-icon"), ("/apple-touch-icon.png", "image/png")):
+        s, _, h = anon.req("GET", p, raw=True)
+        check("icon is public: " + p, s == 200 and h.get("Content-Type", "").startswith(ctype), (s, h.get("Content-Type")))
     check("app script needs sign-in", anon.req("GET", "/src/js/app.js", raw=True)[0] == 401)
     for p in ("/data/seed.json", "/data/seed.js", "/server/app.py", "/README.md", "/src/../data/seed.json", "/%2e%2e/server/db.py"):
         check("never served: " + p, anon.req("GET", p, raw=True)[0] == 404)
@@ -199,25 +202,35 @@ def main():
     decide = lambda c, rid, st="Approved": c.req("POST", "/api/requests/decide", {"kind": "leave", "id": rid, "status": st})
     check("manager can't approve own request", decide(m2, m2_id)[0] == 403)
     check("M1 approves M2 (manager assigned to M1)", decide(m1, m2_id)[0] == 200)
-    check("M1 can't approve E2 (assigned to M2)", decide(m1, e2_id)[0] == 403)
+    s, b = decide(m2, e1_id)
+    check("M2 can't decide E1 (not below M2) or learn whose it is", s == 404 and "Eve" not in json.dumps(b), (s, b))
     check("M2 approves E2", decide(m2, e2_id)[0] == 200)
+    check("M1 can decide E2 too (E2 -> M2 -> M1)", decide(m1, e2_id)[0] == 200)
     check("M1 declines E1 with note", m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})[0] == 200)
     s, st = m1.req("GET", "/api/state")
     full = {r["empId"] for r in st["leave"] if not r.get("redacted")}
-    hidden = [r for r in st["leave"] if r["empId"] not in ("M1", "M2", "E1")]
-    check("manager sees own team in full (self + assigned)", s == 200 and full == {"M2", "E1"} and all("canDecide" in r for r in st["leave"] if r["empId"] in full), full)
-    check("manager sees everyone else without details", hidden and all(r.get("redacted") and r["reason"] is None for r in hidden))
-    check("manager's team list is only their own team", sorted(u["empId"] for u in st.get("team", [])) == ["E1", "M1", "M2"], st.get("team"))
-    check("manager can file for self + assigned people only",
-          sorted(p["empId"] for p in st["people"] if p["canApply"]) == ["E1", "M1", "M2"])
+    owners = {r["empId"] for k in ("leave", "wfh") for r in st[k]}
+    chain = ["E1", "E2", "M1", "M2"]
+    check("senior manager sees whole chain in full (M2, E1 and M2's E2)", s == 200 and full == {"M2", "E1", "E2"} and all("canDecide" in r for r in st["leave"] if r["empId"] in full), full)
+    check("manager gets no records at all for people outside their team", owners <= set(chain), owners)
+    check("manager's people list is only their own team", sorted(p["empId"] for p in st["people"]) == chain,
+          [p["empId"] for p in st["people"]])
+    check("manager's team list is only their own team", sorted(u["empId"] for u in st.get("team", [])) == chain, st.get("team"))
+    check("manager can file for anyone in their chain only", sorted(p["empId"] for p in st["people"] if p["canApply"]) == chain)
+    _, st2 = m2.req("GET", "/api/state")
+    below_m2 = {r["empId"] for k in ("leave", "wfh") for r in st2[k]}
+    check("junior manager sees only their own part of the chain (M2, E2)",
+          below_m2 <= {"M2", "E2"} and sorted(p["empId"] for p in st2["people"]) == ["E2", "M2"], below_m2)
     s, b = m1.req("POST", "/api/requests", dict(req, forEmpId="E1", **{"from": "2026-10-21", "to": "2026-10-21"}))
     check("manager files leave for someone assigned to them", s == 200, b)
     check("manager deletes a record of someone assigned to them", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": b.get("id")})[0] == 200)
-    check("manager can't file for someone not assigned (E2 -> M2)", m1.req("POST", "/api/requests", dict(req, forEmpId="E2"))[0] == 403)
+    check("senior manager files for someone in a sub-team (E2)", m1.req("POST", "/api/requests", dict(req, forEmpId="E2", **{"from": "2026-10-22", "to": "2026-10-22"}))[0] == 200)
+    check("junior manager can't file for someone outside their chain (E1)", m2.req("POST", "/api/requests", dict(req, forEmpId="E1"))[0] == 403)
     check("manager can't file for someone with no login", m1.req("POST", "/api/requests", dict(req, forEmpId="P001"))[0] == 403)
-    pend = [r for r in st["leave"] if r["status"] == "Pending" and r["empId"] not in ("E1", "E2", "M1", "M2")]
-    check("manager can't decide someone not assigned to them", pend and decide(m1, pend[0]["id"])[0] == 403)
-    check("manager can't delete records outside their team", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 403)
+    _, ast = admin.req("GET", "/api/state")
+    pend = [r for r in ast["leave"] if r["status"] == "Pending" and r["empId"] not in ("E1", "E2", "M1", "M2")]
+    check("manager can't decide someone not assigned to them", pend and decide(m1, pend[0]["id"])[0] == 404)
+    check("manager can't delete records outside their team", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 404)
     check("manager can't manage users", m1.req("POST", "/api/users/update", {"empId": "E1", "role": "admin"})[0] == 403)
     check("admin decides anyone's request", decide(admin, pend[0]["id"])[0] == 200)
     check("admin can revoke a decision", decide(admin, m2_id, "Declined")[0] == 200)
@@ -247,6 +260,11 @@ def main():
     check("admin export works", admin.req("GET", "/api/export")[0] == 200)
     s, b = admin.req("POST", "/api/logout", {})
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
+
+    print("\n-- reporting chain")
+    loop = {"X": {"emp_id": "X", "name": "Xan Loop", "role": "manager", "manager_emp_id": "Y", "active": 1},
+            "Y": {"emp_id": "Y", "name": "Yul Loop", "role": "manager", "manager_emp_id": "X", "active": 1}}
+    check("a loop in manager assignments doesn't hang", domain.team_of(loop["X"], loop) == {"X", "Y"})
 
     print("\n-- storage & brute force")
     if not pg_url:

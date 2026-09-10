@@ -2,10 +2,11 @@
 
 Roles:
   employee  apply/withdraw own requests; calendar with colleagues' details hidden
-  manager   full access to themselves and the people assigned to them: apply on
-            their behalf, decide their requests (never their own), delete their
-            records, and see them in full on the calendar, dashboards and
-            register. Everyone else shows on the calendar only, details hidden.
+  manager   full access to their team - themselves and everyone below them in the
+            reporting chain (people assigned to them, to the managers assigned to
+            them, and so on): apply on their behalf, decide their requests (never
+            their own), delete their records, and see them in full on the
+            calendar, dashboards and register. No data at all about anyone else.
   admin     full access to everyone - including people who have records but no
             login yet - plus users, roles, manager assignments and settings
 """
@@ -121,7 +122,7 @@ def submit_request(app, body, ctx):
     users = app.db.users()
     if not domain.can_file_for(user, for_emp, users):
         raise ApiError(403, "You can only submit requests for yourself" if user["role"] == "employee"
-                       else "You can only submit requests for yourself or people assigned to you")
+                       else "You can only submit requests for yourself or your team")
     kind = body.get("kind")
 
     def fn(st):
@@ -147,6 +148,8 @@ def decide_request(app, body, ctx):
 
     def fn(st):
         rec = domain.find(st, body.get("kind"), body.get("id"))
+        if not domain.can_see(user, rec.get("empId"), users):
+            raise ApiError(404, "Request not found")     # don't reveal whose it is
         if not domain.can_decide(user, rec, users):
             raise ApiError(403, "Only %s's manager or an admin can decide this request" % rec["name"])
         rec.update(status=status, decidedBy=user["name"], decidedAt=domain.now_iso())
@@ -166,6 +169,8 @@ def delete_request(app, body, ctx):
     def fn(st):
         kind = body.get("kind")
         rec = domain.find(st, kind, body.get("id"))
+        if not domain.can_see(user, rec.get("empId"), users):
+            raise ApiError(404, "Request not found")
         if not domain.can_delete(user, rec, users):
             raise ApiError(403, "Only an admin or %s's manager can delete this record" % rec["name"])
         st[kind] = [r for r in st[kind] if r is not rec]
