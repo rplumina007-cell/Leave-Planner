@@ -18,7 +18,7 @@ import time
 import domain
 import security
 
-USER_FIELDS = ("emp_id", "name", "role", "manager_emp_id", "must_change", "active", "created_at", "updated_at")
+USER_FIELDS = ("emp_id", "name", "role", "manager_emp_id", "teams", "must_change", "active", "created_at", "updated_at")
 SCHEMA_LOCK_ID = 7300451   # arbitrary; serialises schema setup when several instances cold-start at once
 
 
@@ -37,6 +37,7 @@ def schema(pg):
              pw_hash        TEXT NOT NULL,
              must_change    INTEGER NOT NULL DEFAULT 1,
              active         INTEGER NOT NULL DEFAULT 1,
+             teams          TEXT NOT NULL DEFAULT '[]',
              created_at     TEXT NOT NULL,
              updated_at     TEXT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS sessions (
@@ -56,6 +57,7 @@ def schema(pg):
 def _user(row, include_hash):
     u = {f: row[f] for f in USER_FIELDS}
     u["must_change"], u["active"] = bool(u["must_change"]), bool(u["active"])
+    u["teams"] = json.loads(u["teams"] or "[]")
     if include_hash:
         u["pw_hash"] = row["pw_hash"]
     return u
@@ -88,12 +90,25 @@ class DB:
                 c.execute("SELECT pg_advisory_xact_lock(?)", (SCHEMA_LOCK_ID,))
             for stmt in schema(self.pg):
                 c.execute(stmt)
+            self._add_missing_columns(c)
             if not c.one("SELECT 1 AS x FROM state WHERE id = 1"):
                 if seed_path and os.path.exists(seed_path):
                     seed, h = domain.load_seed(seed_path)
                 else:                      # no sheet imported: start empty
                     seed, h = domain.empty_seed(), None
                 c.execute("INSERT INTO state (id, json) VALUES (1, ?)", (json.dumps(domain.fresh_state(seed, h)),))
+
+    def _add_missing_columns(self, c):
+        """Columns added after the first release, for databases created before them.
+        Additive only: existing rows keep every value and get the default. Checked
+        first, so a cold start doesn't take a table lock when there's nothing to do."""
+        if self.pg:
+            rows = c.all("SELECT column_name AS name FROM information_schema.columns"
+                         " WHERE table_schema = current_schema() AND table_name = 'users'")
+        else:
+            rows = c.all("PRAGMA table_info(users)")
+        if "teams" not in {r["name"] for r in rows}:
+            c.execute("ALTER TABLE users ADD COLUMN teams TEXT NOT NULL DEFAULT '[]'")
 
     # ------------------------------------------------------------ connections
     def _connect(self):
@@ -167,17 +182,19 @@ class DB:
             r = c.one("SELECT * FROM users WHERE emp_id = ?", (emp_id,))
         return _user(r, include_hash) if r else None
 
-    def create_user(self, emp_id, name, role, password, manager_emp_id=None, must_change=True):
+    def create_user(self, emp_id, name, role, password, manager_emp_id=None, must_change=True, teams=None):
         now = domain.now_iso()
         with self._lock, self.tx() as c:
             c.execute(
-                "INSERT INTO users (emp_id, name, role, manager_emp_id, pw_hash, must_change, active, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
-                (emp_id, name, role, manager_emp_id or None, security.hash_password(password), int(bool(must_change)), now, now))
+                "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, pw_hash, must_change, active, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                (emp_id, name, role, manager_emp_id or None, json.dumps(teams or []), security.hash_password(password),
+                 int(bool(must_change)), now, now))
 
     def update_user(self, emp_id, **fields):
-        allowed = {"name", "role", "manager_emp_id", "must_change", "active"}
-        sets = {k: (int(v) if isinstance(v, bool) else v) for k, v in fields.items() if k in allowed}
+        allowed = {"name", "role", "manager_emp_id", "teams", "must_change", "active"}
+        sets = {k: (json.dumps(v) if k == "teams" else int(v) if isinstance(v, bool) else v)
+                for k, v in fields.items() if k in allowed}
         if "password" in fields:
             sets["pw_hash"] = security.hash_password(fields["password"])
         if not sets:
@@ -251,9 +268,9 @@ class DB:
             c.execute("DELETE FROM users")
             for u in users:                     # managers are linked after everyone exists
                 c.execute(
-                    "INSERT INTO users (emp_id, name, role, manager_emp_id, pw_hash, must_change, active, created_at, updated_at)"
-                    " VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)",
-                    (u["emp_id"], u["name"], u["role"], u["pw_hash"], int(bool(u["must_change"])),
+                    "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, pw_hash, must_change, active, created_at, updated_at)"
+                    " VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                    (u["emp_id"], u["name"], u["role"], json.dumps(u.get("teams") or []), u["pw_hash"], int(bool(u["must_change"])),
                      int(bool(u["active"])), u["created_at"], u["updated_at"]))
             for u in users:
                 if u.get("manager_emp_id"):

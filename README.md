@@ -47,20 +47,22 @@ change their password later with the 🔑 button.
 
 | | Employee | Manager | Admin |
 | --- | --- | --- | --- |
-| Calendar | ✓ — colleagues' reasons/comments hidden | their team only | ✓ full |
-| Apply leave / WFH | for themselves | for themselves and their team | for anyone, including people without a login |
-| Approvals | — | their team's requests (never their own) | every request |
-| Dashboards, Register | — | their team | everyone |
-| Delete records | withdraw own pending | their team's records; own pending | ✓ |
-| Settings (users, roles, managers, dropdowns, cleanup, sheet sync) | — | — | ✓ |
+| Calendar | their teams — teammates' reasons/comments hidden | their teams, in full | everyone |
+| Apply leave / WFH | for themselves | for themselves, and people they manage in their teams | for anyone, including people without a login |
+| Approvals | — | people they manage in their teams (never their own) | every request |
+| Dashboards, Register | — | their teams | everyone |
+| Delete records | withdraw own pending | people they manage in their teams; own pending | ✓ |
+| Settings (users, roles, teams, managers, dropdowns, cleanup, sheet sync) | — | — | ✓ |
 
-A manager's **team** is themselves plus everyone below them in the reporting
-chain: the people assigned to them, the people assigned to those managers, and so
-on. Managers can be assigned to other managers, so a senior manager can see, file
-for and decide requests across every team under them. A manager receives no data
-at all about anyone outside their team — not on the calendar, not in any list.
-Every rule is enforced by the server (`server/api.py`), not just hidden in the
-page.
+**Teams** decide who can see whom. An admin creates teams in **⚙ Settings →
+Teams** and gives each login one or more of them in **Users**. People see only
+those who share one of their teams — nothing at all about anyone else — and
+**All Teams** counts as every team. Someone with no team sees only themselves.
+
+**Managers** act — apply on someone's behalf, approve or decline, delete — only
+for people below them in the reporting chain (people assigned to them, to the
+managers assigned to them, and so on) who are also in one of their teams. Every
+rule is enforced by the server (`server/api.py`), not just hidden in the page.
 
 **Security**
 - Passwords are stored as scrypt hashes; sessions are random tokens stored hashed,

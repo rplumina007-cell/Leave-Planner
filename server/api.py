@@ -1,14 +1,17 @@
 """JSON API. Every permission is decided here - the browser only hides buttons.
 
+Teams decide who sees whom. An admin gives each login one or more teams; people
+see only those sharing one of their teams - nothing at all about anyone else -
+and "All Teams" counts as every team. Someone with no team sees only themselves.
+
 Roles:
-  employee  apply/withdraw own requests; calendar with colleagues' details hidden
-  manager   full access to their team - themselves and everyone below them in the
-            reporting chain (people assigned to them, to the managers assigned to
-            them, and so on): apply on their behalf, decide their requests (never
-            their own), delete their records, and see them in full on the
-            calendar, dashboards and register. No data at all about anyone else.
+  employee  apply/withdraw own requests; calendar of their teams, with teammates'
+            reasons and comments hidden
+  manager   everyone in their teams in full on the calendar, dashboards and
+            register; apply for, decide (never their own) and delete for people
+            below them in the reporting chain who are also in one of their teams
   admin     full access to everyone - including people who have records but no
-            login yet - plus users, roles, manager assignments and settings
+            login yet - plus users, roles, teams, manager assignments and settings
 """
 import os
 import re
@@ -31,7 +34,8 @@ class ApiError(Exception):
 
 def public_user(u):
     return {"empId": u["emp_id"], "name": u["name"], "role": u["role"],
-            "managerEmpId": u["manager_emp_id"], "mustChange": u["must_change"], "active": u["active"]}
+            "managerEmpId": u["manager_emp_id"], "teams": u.get("teams") or [],
+            "mustChange": u["must_change"], "active": u["active"]}
 
 
 def need(user, *roles):
@@ -47,8 +51,7 @@ def state_payload(app, user):
     out = domain.view_for(st, user, users)
     out["me"] = public_user(user)
     if user["role"] in ("manager", "admin"):
-        team = domain.team_of(user, users)
-        out["team"] = [public_user(u) for u in users.values() if team is None or u["emp_id"] in team]
+        out["team"] = [public_user(u) for u in users.values() if domain.can_see(user, u["emp_id"], users)]
     if user["role"] == "admin":
         h = domain.load_seed(app.seed_path)[1] if os.path.exists(app.seed_path) else None
         out["seedIsNewer"] = bool(h) and h != st.get("seedHash")
@@ -192,6 +195,21 @@ def _check_manager(app, manager_emp_id, emp_id):
     return manager_emp_id
 
 
+def _check_teams(app, teams):
+    """A clean list of existing team names. All Teams on its own stands for every team."""
+    if teams is None:
+        return []
+    if not isinstance(teams, list) or not all(isinstance(t, str) for t in teams):
+        raise ApiError(400, "Teams must be a list of team names")
+    known, out = set(app.db.read_state().get("teams", [])), []
+    for t in teams:
+        if t != domain.ALL_TEAMS and t not in known:
+            raise ApiError(400, 'Unknown team "%s"' % t)
+        if t not in out:
+            out.append(t)
+    return [domain.ALL_TEAMS] if domain.ALL_TEAMS in out else out
+
+
 def create_user(app, body, ctx):
     need(ctx["user"], "admin")
     emp = str(body.get("empId", "")).strip()
@@ -209,7 +227,8 @@ def create_user(app, body, ctx):
     if problem:
         raise ApiError(400, problem)
     manager = _check_manager(app, body.get("managerEmpId"), emp)
-    app.db.create_user(emp, name, role, body["password"], manager, must_change=True)
+    teams = _check_teams(app, body.get("teams"))
+    app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams)
     app.db.mutate(lambda st: domain.log(st, "login created (%s)" % role, "users", emp, name, ctx["user"]["name"]))
     return {"state": state_payload(app, ctx["user"])}, []
 
@@ -235,6 +254,8 @@ def update_user(app, body, ctx):
         changes["role"] = body["role"]
     if "managerEmpId" in body:
         changes["manager_emp_id"] = _check_manager(app, body["managerEmpId"], emp)
+    if "teams" in body:
+        changes["teams"] = _check_teams(app, body["teams"])
     if "active" in body:
         if emp == admin["emp_id"] and not body["active"]:
             raise ApiError(400, "You cannot deactivate your own login")
@@ -284,6 +305,30 @@ def delete_user(app, body, ctx):
     app.db.delete_user(emp)            # their requests stay; reports lose their manager
     app.db.mutate(lambda st: domain.log(st, "login deleted", "users", emp, u["name"], admin["name"]))
     return {"state": state_payload(app, admin)}, []
+
+
+# ------------------------------------------------------------------ teams (admin)
+def team_add(app, body, ctx):
+    need(ctx["user"], "admin")
+
+    def fn(st):
+        name = domain.add_team(st, body.get("name"))
+        domain.log(st, "team created", "teams", "", name, ctx["user"]["name"])
+    app.db.mutate(fn)
+    return {"state": state_payload(app, ctx["user"])}, []
+
+
+def team_remove(app, body, ctx):
+    need(ctx["user"], "admin")
+    name = body.get("name")
+    app.db.mutate(lambda st: domain.remove_team(st, name))      # refuses an unknown name before anyone is changed
+    moved = 0
+    for u in app.db.users().values():
+        if name in u["teams"]:
+            app.db.update_user(u["emp_id"], teams=[t for t in u["teams"] if t != name])
+            moved += 1
+    app.db.mutate(lambda st: domain.log(st, "team removed (%d members)" % moved, "teams", "", name, ctx["user"]["name"]))
+    return {"removed": moved, "state": state_payload(app, ctx["user"])}, []
 
 
 # ------------------------------------------------------------------ settings (admin)
@@ -358,6 +403,8 @@ ROUTES = {
     ("POST", "/api/users/update"): update_user,
     ("POST", "/api/users/reset-password"): reset_password,
     ("POST", "/api/users/delete"): delete_user,
+    ("POST", "/api/teams/add"): team_add,
+    ("POST", "/api/teams/remove"): team_remove,
     ("POST", "/api/options/add"): option_add,
     ("POST", "/api/options/remove"): option_remove,
     ("POST", "/api/options/planned"): option_planned,

@@ -33,9 +33,35 @@
     });
   }
 
+  /* Checkboxes for All Teams plus every team the admin created. All Teams already
+     covers every team, so ticking it greys the rest out. */
+  function teamChecks(selected) {
+    var names = [S.ALL_TEAMS].concat(S.state.teams || []);
+    var boxes = names.map(function (t) {
+      return el('input', { type: 'checkbox', value: t, checked: selected.indexOf(t) !== -1 || null });
+    });
+    function sync() {
+      boxes.slice(1).forEach(function (b) { b.disabled = boxes[0].checked; });
+    }
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    sync();
+    return {
+      node: el('div', { class: 'row', style: 'gap:6px 16px' }, names.map(function (t, i) {
+        return el('label', { class: 'row', style: 'gap:6px;flex-wrap:nowrap;font-size:12.5px;font-weight:600;cursor:pointer' },
+          [boxes[i], i ? t : 'All Teams — everyone']);
+      }).concat(names.length > 1 ? [] : [
+        el('span', { class: 'sub', style: 'font-size:12px', text: 'Create teams in the Teams tab.' })
+      ])),
+      value: function () {
+        return boxes[0].checked ? [S.ALL_TEAMS]
+          : boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+      }
+    };
+  }
+
   function open() {
     var tab = 'users';
-    var TABS = [['users', 'Users'], ['lists', 'Dropdowns'], ['clean', 'Cleanup'], ['data', 'Data']];
+    var TABS = [['users', 'Users'], ['teams', 'Teams'], ['lists', 'Dropdowns'], ['clean', 'Cleanup'], ['data', 'Data']];
     var tabStrip = el('div', { class: 'tabs' });
     var body = el('div', {});
     var overlay = el('div', { class: 'modal' }, [
@@ -57,7 +83,7 @@
         }, [t[1]]));
       });
       U.clear(body);
-      body.appendChild(tab === 'users' ? usersTab() : tab === 'lists' ? listsTab() : tab === 'clean' ? cleanTab() : dataTab());
+      body.appendChild(tab === 'users' ? usersTab() : tab === 'teams' ? teamsTab() : tab === 'lists' ? listsTab() : tab === 'clean' ? cleanTab() : dataTab());
     }
     function after(p) { return p.then(function (res) { draw(); return res; }); }
     function close() { overlay.remove(); W.app.rerender(); }
@@ -71,12 +97,16 @@
       var mgr = el('select', {}, [el('option', { value: '', text: '— none —' })].concat(managers().map(function (m) {
         return el('option', { value: m.empId, text: m.name + ' (' + m.role + ')' });
       })));
+      var teamPick = teamChecks([]);
       var err = el('div', {});
       var done = el('div', {});
 
       function create() {
         U.clear(err); U.clear(done);
-        var body = { empId: emp.value.trim(), name: name.value.trim(), password: pw.value, role: role.value, managerEmpId: mgr.value || null };
+        var body = {
+          empId: emp.value.trim(), name: name.value.trim(), password: pw.value, role: role.value,
+          managerEmpId: mgr.value || null, teams: teamPick.value()
+        };
         if (!body.empId || !body.name || !body.password) {
           err.appendChild(el('div', { class: 'err', text: 'Employee ID, full name and password are all required.' }));
           return;
@@ -124,6 +154,12 @@
           ])]),
           el('td', {}, [roleSel]),
           el('td', {}, [mgrSel]),
+          el('td', { style: 'min-width:150px' }, [
+            el('div', { class: 'row', style: 'gap:4px' }, (u.teams || []).length
+              ? u.teams.map(function (t) { return el('span', { class: 'pill ghost', text: t }); })
+              : [el('span', { class: 'sub', style: 'font-size:11.5px', text: u.role === 'admin' ? 'Admins see everyone' : 'No team — sees only themselves' })]),
+            el('button', { class: 'btn sm', style: 'margin-top:5px', text: 'Edit teams', onclick: function () { askTeams(u); } })
+          ]),
           el('td', {}, [
             el('span', { class: 'pill ' + (u.active ? 'Approved' : 'Declined'), text: u.active ? 'Active' : 'Inactive' }),
             u.mustChange ? el('div', { class: 'sub', style: 'font-size:11px;margin-top:2px', text: 'awaiting first sign-in' }) : null
@@ -162,6 +198,7 @@
             ])]),
             el('div', { class: 'f2' }, [el('label', { class: 'f' }, ['Role', role]), el('label', { class: 'f' }, ['Manager', mgr])])
           ]),
+          el('div', { class: 'f', style: 'margin-top:12px' }, ['Teams — decide who they can see', teamPick.node]),
           el('div', { class: 'row', style: 'margin-top:12px;justify-content:space-between' }, [
             el('div', { class: 'sub', style: 'font-size:12px', text: 'They must choose their own password at first sign-in.' }),
             el('button', { class: 'btn primary', text: 'Create login', onclick: create })
@@ -181,7 +218,7 @@
           el('h3', { style: 'font-size:13px;margin-bottom:8px', text: 'Logins (' + team().length + ')' }),
           el('div', { class: 'scroll', style: 'max-height:340px;overflow-y:auto' }, [
             el('table', {}, [
-              el('thead', {}, [el('tr', {}, ['Person', 'Role', 'Manager', 'Status', ''].map(function (t) { return el('th', { text: t }); }))]),
+              el('thead', {}, [el('tr', {}, ['Person', 'Role', 'Manager', 'Teams', 'Status', ''].map(function (t) { return el('th', { text: t }); }))]),
               el('tbody', {}, rows)
             ])
           ])
@@ -221,6 +258,77 @@
       box.addEventListener('mousedown', function (e) { if (e.target === box) shut(); });
       document.body.appendChild(box);
       input.select();
+    }
+
+    function askTeams(u) {
+      var pick = teamChecks(u.teams || []);
+      var box = el('div', { class: 'modal' });
+      function shut() { box.remove(); }
+      box.appendChild(el('div', { class: 'box' }, [
+        el('div', { class: 'card-h' }, [el('h3', { text: 'Teams — ' + u.name })]),
+        el('div', { class: 'card-b', style: 'display:grid;gap:12px' }, [
+          el('div', { class: 'sub', text: u.name + ' will see only people who share one of these teams. All Teams gives access to everyone.' }),
+          pick.node
+        ]),
+        el('div', { class: 'card-h', style: 'border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end' }, [
+          el('button', { class: 'btn', text: 'Cancel', onclick: shut }),
+          el('button', {
+            class: 'btn primary', text: 'Save teams', onclick: function () {
+              after(S.updateUser({ empId: u.empId, teams: pick.value() })).then(function (res) {
+                if (res) { U.toast('Teams updated for ' + u.name); shut(); }
+              });
+            }
+          })
+        ])
+      ]));
+      box.addEventListener('mousedown', function (e) { if (e.target === box) shut(); });
+      document.body.appendChild(box);
+    }
+
+    /* ================= Teams ================= */
+    function teamsTab() {
+      var input = el('input', { type: 'text', placeholder: 'e.g. Data Engineering', maxlength: '40' });
+      var err = el('div', {});
+      function members(t) { return team().filter(function (u) { return (u.teams || []).indexOf(t) !== -1; }); }
+      function line(name, builtIn, note, action) {
+        var n = members(name).length;
+        return el('div', { class: 'row', style: 'gap:8px;flex-wrap:nowrap;padding:7px 0;border-bottom:1px solid var(--line)' }, [
+          el('span', { style: 'font-weight:600;min-width:170px', text: name }),
+          builtIn ? el('span', { class: 'pill ghost', text: 'built in' }) : null,
+          el('span', { class: 'sub', text: n + (n === 1 ? ' person' : ' people') + (note ? ' · ' + note : '') }),
+          el('span', { style: 'flex:1' }),
+          action
+        ]);
+      }
+      function add() {
+        U.clear(err);
+        S.createTeam(input.value).then(function () { U.toast('Team created'); draw(); },
+          function (e) { err.appendChild(el('div', { class: 'err', text: e.message })); });
+      }
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
+      var teams = S.state.teams || [];
+      return el('div', { class: 'card-b', style: 'display:grid;gap:16px' }, [
+        el('div', {
+          class: 'sub', text: 'People see only those who share one of their teams — managers in full, employees as dates ' +
+            'without reasons. Someone with no team sees only themselves; admins always see everyone. Assign teams in the Users tab.'
+        }),
+        el('div', {}, [line(S.ALL_TEAMS, true, 'access to everyone\'s data', null)].concat(teams.map(function (t) {
+          return line(t, false, '', el('button', {
+            class: 'btn bad sm', text: 'Remove', onclick: function () {
+              var n = members(t).length;
+              if (!confirm('Remove the team "' + t + '"?' +
+                (n ? '\n\n' + n + (n === 1 ? ' person' : ' people') + ' will be taken out of it and may lose access to teammates.' : ''))) return;
+              after(S.removeTeam(t)).then(function (res) { if (res) U.toast('Team removed'); });
+            }
+          }));
+        }))),
+        teams.length ? null : el('div', { class: 'sub', text: 'No teams yet — create the first one below.' }),
+        el('div', { class: 'row', style: 'align-items:flex-end' }, [
+          el('label', { class: 'f', style: 'flex:1' }, ['New team name', input]),
+          el('button', { class: 'btn primary', text: 'Create team', onclick: add })
+        ]),
+        err
+      ]);
     }
 
     /* ================= Dropdowns ================= */

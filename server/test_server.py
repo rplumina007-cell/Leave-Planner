@@ -151,27 +151,40 @@ def main():
     check("admin can't file for an unknown ID", admin.req("POST", "/api/requests", {"kind": "wfh", "forEmpId": "ZZZ", "from": "2026-10-19",
                                                                                    "duration": "Full Day", "reason": "Personal Work"})[0] == 400)
 
-    print("\n-- admin creates logins and managers")
-    mk = lambda emp, name, role, mgr=None: admin.req("POST", "/api/users", {
-        "empId": emp, "name": name, "role": role, "password": "Start-Here-2026", "managerEmpId": mgr})
-    check("create manager M1", mk("M1", "Mona Manager", "manager")[0] == 200)
-    check("create manager M2 reporting to M1", mk("M2", "Max Manager", "manager", "M1")[0] == 200)
-    check("create employee E1 under M1", mk("E1", "Eve Employee", "employee", "M1")[0] == 200)
-    check("create employee E2 under M2", mk("E2", "Eli Employee", "employee", "M2")[0] == 200)
+    print("\n-- admin creates teams, logins and managers")
+    new_team = lambda name: admin.req("POST", "/api/teams/add", {"name": name})
+    for t in ("Alpha", "Beta", "Gamma"):
+        check("create team " + t, new_team(t)[0] == 200)
+    check("duplicate team name refused (any case)", new_team("alpha")[0] == 400)
+    check("All Teams is built in and can't be created", new_team("all teams")[0] == 400)
+    mk = lambda emp, name, role, mgr=None, teams=None: admin.req("POST", "/api/users", {
+        "empId": emp, "name": name, "role": role, "password": "Start-Here-2026", "managerEmpId": mgr, "teams": teams or []})
+    check("create manager M1 in Alpha + Beta", mk("M1", "Mona Manager", "manager", None, ["Alpha", "Beta"])[0] == 200)
+    check("create manager M2 reporting to M1, in Beta", mk("M2", "Max Manager", "manager", "M1", ["Beta"])[0] == 200)
+    check("create employee E1 under M1, in Alpha", mk("E1", "Eve Employee", "employee", "M1", ["Alpha"])[0] == 200)
+    check("create employee E2 under M2, in Beta", mk("E2", "Eli Employee", "employee", "M2", ["Beta"])[0] == 200)
+    check("create employee E5 under M1 but in Gamma", mk("E5", "Gia Gamma", "employee", "M1", ["Gamma"])[0] == 200)
+    check("create employee G1 in All Teams", mk("G1", "Gus Global", "employee", None, ["All Teams", "Alpha"])[0] == 200)
+    check("unknown team refused", mk("E6", "Uma Unknown", "employee", None, ["Nope"])[0] == 400)
     check("duplicate employee ID refused", mk("E1", "Someone Else", "employee")[0] == 409)
     check("employee can't be assigned as a manager", mk("E3", "Ezra Employee", "employee", "E1")[0] == 400)
     check("create needs a valid password", admin.req("POST", "/api/users", {"empId": "E4", "name": "Emma Employee", "role": "employee", "password": "123"})[0] == 400)
+    _, ast = admin.req("GET", "/api/state")
+    check("admin sees the team list", ast.get("teams") == ["Alpha", "Beta", "Gamma"], ast.get("teams"))
+    check("All Teams is stored on its own", [u["teams"] for u in ast["team"] if u["empId"] == "G1"] == [["All Teams"]])
 
-    e1, e2, m1, m2 = Client(port), Client(port), Client(port), Client(port)
-    for c, emp, pw in ((e1, "E1", "Harbor-Lamp-11"), (e2, "E2", "Copper-Gate-22"), (m1, "M1", "Silver-Pine-33"), (m2, "M2", "Amber-Rail-44")):
+    e1, e2, m1, m2, e5, g1 = (Client(port) for _ in range(6))
+    for c, emp, pw in ((e1, "E1", "Harbor-Lamp-11"), (e2, "E2", "Copper-Gate-22"), (m1, "M1", "Silver-Pine-33"),
+                       (m2, "M2", "Amber-Rail-44"), (e5, "E5", "Maple-Stone-55"), (g1, "G1", "Cedar-Wind-66")):
         check(emp + " replaces one-time password", c.ready(emp, "Start-Here-2026", pw)[0] == 200)
 
-    print("\n-- employee")
+    print("\n-- employee (E1, in Alpha)")
     s, st = e1.req("GET", "/api/state")
-    others = [r for r in st["leave"] if r["empId"] != "E1"]
-    check("employee sees team calendar", s == 200 and len(others) > 100)
-    check("colleagues' reasons/comments hidden", all(r["reason"] is None and r["comment"] == "" and r.get("redacted") for r in others))
-    check("no audit, team or manager data for employee", "audit" not in st and "team" not in st)
+    seen = sorted(p["empId"] for p in st["people"])
+    check("employee sees only their team (M1 in Alpha, G1 in All Teams)", s == 200 and seen == ["E1", "G1", "M1"], seen)
+    check("employee gets no records for anyone outside their teams",
+          not [r for k in ("leave", "wfh") for r in st[k] if r["empId"] not in seen])
+    check("no audit, team or manager data for employee", "audit" not in st and "team" not in st and "teams" not in st)
     check("employee can only file for themselves", [p["empId"] for p in st["people"] if p["canApply"]] == ["E1"])
     req = {"kind": "leave", "from": "2026-10-12", "to": "2026-10-13", "duration": "Full Day", "reason": "Planned Leave"}
     s, b = e1.req("POST", "/api/requests", req)
@@ -189,49 +202,63 @@ def main():
                        ("/api/sync", {})):
         check("employee blocked: " + path, e1.req("POST", path, body)[0] == 403)
     check("employee blocked: export", e1.req("GET", "/api/export")[0] == 403)
-    legacy = [r for r in st["leave"] if r["empId"] != "E1"][0]
-    check("employee can't delete a colleague's record", e1.req("POST", "/api/requests/delete", {"kind": "leave", "id": legacy["id"]})[0] == 403)
+    legacy = [r for r in ast["leave"] if r["empId"].startswith("P")][0]
+    check("employee can't delete a record outside their team", e1.req("POST", "/api/requests/delete", {"kind": "leave", "id": legacy["id"]})[0] == 404)
     s, b = e1.req("POST", "/api/requests", dict(req, **{"from": "2026-10-20", "to": "2026-10-20"}))
     check("employee withdraws own pending request", e1.req("POST", "/api/requests/delete", {"kind": "leave", "id": b["id"]})[0] == 200)
 
-    print("\n-- manager chain (M2 reports to M1; E1 -> M1; E2 -> M2)")
+    print("\n-- managers: teams decide who they see, the reporting chain who they act for")
+    print("   M1: Alpha+Beta | M2 -> M1, Beta | E1 -> M1, Alpha | E2 -> M2, Beta | E5 -> M1, Gamma | G1: All Teams")
     s, b = m2.req("POST", "/api/requests", dict(req, **{"from": "2026-10-14", "to": "2026-10-14"}))
     m2_id = b["id"]
     s, b = e2.req("POST", "/api/requests", dict(req, **{"from": "2026-10-15", "to": "2026-10-15"}))
     e2_id = b["id"]
+    s, b = e5.req("POST", "/api/requests", dict(req, **{"from": "2026-10-16", "to": "2026-10-16"}))
+    e5_id = b["id"]
     decide = lambda c, rid, st="Approved": c.req("POST", "/api/requests/decide", {"kind": "leave", "id": rid, "status": st})
     check("manager can't approve own request", decide(m2, m2_id)[0] == 403)
-    check("M1 approves M2 (manager assigned to M1)", decide(m1, m2_id)[0] == 200)
+    check("M1 approves M2 (below M1, shares Beta)", decide(m1, m2_id)[0] == 200)
     s, b = decide(m2, e1_id)
-    check("M2 can't decide E1 (not below M2) or learn whose it is", s == 404 and "Eve" not in json.dumps(b), (s, b))
+    check("M2 can't decide E1 (not in M2's teams) or learn whose it is", s == 404 and "Eve" not in json.dumps(b), (s, b))
     check("M2 approves E2", decide(m2, e2_id)[0] == 200)
-    check("M1 can decide E2 too (E2 -> M2 -> M1)", decide(m1, e2_id)[0] == 200)
+    check("M1 can decide E2 too (E2 -> M2 -> M1, shares Beta)", decide(m1, e2_id)[0] == 200)
+    s, b = decide(m1, e5_id)
+    check("M1 can't see or decide E5: reports to M1 but in another team", s == 404 and "Gia" not in json.dumps(b), (s, b))
     check("M1 declines E1 with note", m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})[0] == 200)
     s, st = m1.req("GET", "/api/state")
-    full = {r["empId"] for r in st["leave"] if not r.get("redacted")}
+    seen = sorted(p["empId"] for p in st["people"])
     owners = {r["empId"] for k in ("leave", "wfh") for r in st[k]}
-    chain = ["E1", "E2", "M1", "M2"]
-    check("senior manager sees whole chain in full (M2, E1 and M2's E2)", s == 200 and full == {"M2", "E1", "E2"} and all("canDecide" in r for r in st["leave"] if r["empId"] in full), full)
-    check("manager gets no records at all for people outside their team", owners <= set(chain), owners)
-    check("manager's people list is only their own team", sorted(p["empId"] for p in st["people"]) == chain,
-          [p["empId"] for p in st["people"]])
-    check("manager's team list is only their own team", sorted(u["empId"] for u in st.get("team", [])) == chain, st.get("team"))
-    check("manager can file for anyone in their chain only", sorted(p["empId"] for p in st["people"] if p["canApply"]) == chain)
+    check("manager sees everyone sharing a team, incl. G1 (All Teams)", s == 200 and seen == ["E1", "E2", "G1", "M1", "M2"], seen)
+    check("manager gets no records for anyone outside their teams (E5, sheet-only people)", owners <= set(seen), owners)
+    check("manager sees their teams in full", owners and not any(r.get("redacted") for k in ("leave", "wfh") for r in st[k]))
+    check("manager's team list matches who they can see", sorted(u["empId"] for u in st.get("team", [])) == seen, st.get("team"))
+    check("manager acts only for people below them AND in their teams",
+          sorted(p["empId"] for p in st["people"] if p["canApply"]) == ["E1", "E2", "M1", "M2"])
     _, st2 = m2.req("GET", "/api/state")
-    below_m2 = {r["empId"] for k in ("leave", "wfh") for r in st2[k]}
-    check("junior manager sees only their own part of the chain (M2, E2)",
-          below_m2 <= {"M2", "E2"} and sorted(p["empId"] for p in st2["people"]) == ["E2", "M2"], below_m2)
+    check("junior manager sees their own team (Beta: M1, E2) and G1", sorted(p["empId"] for p in st2["people"]) == ["E2", "G1", "M1", "M2"],
+          [p["empId"] for p in st2["people"]])
+    check("junior manager acts only for E2", sorted(p["empId"] for p in st2["people"] if p["canApply"]) == ["E2", "M2"])
     s, b = m1.req("POST", "/api/requests", dict(req, forEmpId="E1", **{"from": "2026-10-21", "to": "2026-10-21"}))
-    check("manager files leave for someone assigned to them", s == 200, b)
-    check("manager deletes a record of someone assigned to them", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": b.get("id")})[0] == 200)
+    check("manager files leave for someone they manage", s == 200, b)
+    check("manager deletes a record of someone they manage", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": b.get("id")})[0] == 200)
     check("senior manager files for someone in a sub-team (E2)", m1.req("POST", "/api/requests", dict(req, forEmpId="E2", **{"from": "2026-10-22", "to": "2026-10-22"}))[0] == 200)
+    check("manager can't file for a report in another team (E5)", m1.req("POST", "/api/requests", dict(req, forEmpId="E5"))[0] == 403)
+    check("manager can't file for a teammate who isn't below them (G1)", m1.req("POST", "/api/requests", dict(req, forEmpId="G1"))[0] == 403)
     check("junior manager can't file for someone outside their chain (E1)", m2.req("POST", "/api/requests", dict(req, forEmpId="E1"))[0] == 403)
     check("manager can't file for someone with no login", m1.req("POST", "/api/requests", dict(req, forEmpId="P001"))[0] == 403)
     _, ast = admin.req("GET", "/api/state")
-    pend = [r for r in ast["leave"] if r["status"] == "Pending" and r["empId"] not in ("E1", "E2", "M1", "M2")]
-    check("manager can't decide someone not assigned to them", pend and decide(m1, pend[0]["id"])[0] == 404)
-    check("manager can't delete records outside their team", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 404)
+    pend = [r for r in ast["leave"] if r["status"] == "Pending" and r["empId"].startswith("P")]
+    check("manager can't decide someone outside their teams", pend and decide(m1, pend[0]["id"])[0] == 404)
+    check("manager can't delete records outside their teams", m1.req("POST", "/api/requests/delete", {"kind": "leave", "id": pend[0]["id"]})[0] == 404)
     check("manager can't manage users", m1.req("POST", "/api/users/update", {"empId": "E1", "role": "admin"})[0] == 403)
+    check("manager can't create teams", m1.req("POST", "/api/teams/add", {"name": "Delta"})[0] == 403)
+
+    print("\n-- All Teams (G1, an employee)")
+    s, stg = g1.req("GET", "/api/state")
+    g_seen = {p["empId"] for p in stg["people"]}
+    check("All Teams sees everyone, sheet-only people included", {"E1", "E2", "E5", "M1", "M2", "P001"} <= g_seen, sorted(g_seen))
+    others = [r for k in ("leave", "wfh") for r in stg[k] if r["empId"] != "G1"]
+    check("...but as an employee still without teammates' reasons", others and all(r.get("redacted") and r["reason"] is None for r in others))
     check("admin decides anyone's request", decide(admin, pend[0]["id"])[0] == 200)
     check("admin can revoke a decision", decide(admin, m2_id, "Declined")[0] == 200)
 
@@ -258,13 +285,20 @@ def main():
     s, b = admin.req("POST", "/api/sync", {})
     check("sheet sync keeps app-submitted requests", s == 200 and b["summary"]["keptLocal"] >= 3, b.get("summary"))
     check("admin export works", admin.req("GET", "/api/export")[0] == 200)
+    s, b = admin.req("POST", "/api/teams/remove", {"name": "Gamma"})
+    check("removing a team takes its members out of it",
+          s == 200 and b.get("removed") == 1 and [u["teams"] for u in b["state"]["team"] if u["empId"] == "E5"] == [[]], b.get("removed"))
+    check("removing an unknown team refused", admin.req("POST", "/api/teams/remove", {"name": "Gamma"})[0] == 400)
+    check("someone with no team sees only themselves", sorted(p["empId"] for p in e5.req("GET", "/api/state")[1]["people"]) == ["E5"])
+    check("admin changes someone's teams", admin.req("POST", "/api/users/update", {"empId": "E5", "teams": ["Alpha"]})[0] == 200)
+    check("new team takes effect straight away", "E1" in {p["empId"] for p in e5.req("GET", "/api/state")[1]["people"]})
     s, b = admin.req("POST", "/api/logout", {})
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
 
     print("\n-- reporting chain")
     loop = {"X": {"emp_id": "X", "name": "Xan Loop", "role": "manager", "manager_emp_id": "Y", "active": 1},
             "Y": {"emp_id": "Y", "name": "Yul Loop", "role": "manager", "manager_emp_id": "X", "active": 1}}
-    check("a loop in manager assignments doesn't hang", domain.team_of(loop["X"], loop) == {"X", "Y"})
+    check("a loop in manager assignments doesn't hang", domain.reporting_chain(loop["X"], loop) == {"Y"})
 
     print("\n-- storage & brute force")
     if not pg_url:

@@ -61,7 +61,7 @@
         }
       }),
       el('span', { style: 'flex:1' }),
-      ctl('Member', [{ v: 'all', t: S.is('manager') ? 'My team' : 'Everyone' }].concat(S.state.people.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
+      ctl('Member', [{ v: 'all', t: S.seesEveryone() ? 'Everyone' : 'My team' }].concat(S.state.people.map(function (x) { return { v: x.name, t: x.name }; })), 'person'),
       ctl('Type', [{ v: 'both', t: 'Leave + WFH' }, { v: 'leave', t: 'Leave only' }, { v: 'wfh', t: 'WFH only' }], 'kind'),
       ctl('Status', [{ v: 'all', t: 'Approved + Pending' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }], 'status')
     ]);

@@ -43,6 +43,9 @@
     var r = role();
     return [].slice.call(arguments).indexOf(r) !== -1;
   }
+  var ALL_TEAMS = 'All Teams';
+  /* Admins and anyone in All Teams see everyone; everyone else only people sharing a team. */
+  function seesEveryone() { return is('admin') || (state.me.teams || []).indexOf(ALL_TEAMS) !== -1; }
 
   /* ---------- domain rules (display only; the server re-checks) ---------- */
   var PLANNED_REASONS = ['Planned Leave', 'Compoff', 'My Day'];
@@ -202,6 +205,8 @@
     return call('/api/users/reset-password', { empId: empId, password: password }, { raise: true });
   }
   function deleteUser(empId) { return call('/api/users/delete', { empId: empId }); }
+  function createTeam(name) { return call('/api/teams/add', { name: name }, { raise: true }); }
+  function removeTeam(name) { return call('/api/teams/remove', { name: name }); }
 
   function changePassword(current, next) {
     return W.api.post('/api/me/password', { current: current, next: next });
@@ -219,7 +224,7 @@
     init: init, reload: reload,
     get state() { return state; },
     subscribe: function (fn) { subs.push(fn); },
-    me: me, role: role, is: is,
+    me: me, role: role, is: is, seesEveryone: seesEveryone, ALL_TEAMS: ALL_TEAMS,
     BUCKETS: BUCKETS, PLANNED_REASONS: PLANNED_REASONS, EDITABLE_LISTS: EDITABLE_LISTS, UNITS: UNITS,
     isPlanned: isPlanned, isHalf: isHalf, bucketOf: bucketOf, expand: expand, computeDays: computeDays,
     all: all, visible: visible, teamPeople: teamPeople, applyPeople: applyPeople, both: both, byDate: byDate, pending: pending, decided: decided, actionable: actionable,
@@ -231,6 +236,7 @@
     addOption: addOption, removeOption: removeOption, setPlannedReason: setPlannedReason,
     purge: purge, syncFromSeed: syncFromSeed,
     createUser: createUser, updateUser: updateUser, resetPassword: resetPassword, deleteUser: deleteUser,
+    createTeam: createTeam, removeTeam: removeTeam,
     changePassword: changePassword, logout: logout, exportJSON: exportJSON
   };
 })(window.WFS);

@@ -12,6 +12,7 @@ PLANNED_REASONS = ["Planned Leave", "Compoff", "My Day"]
 STATUSES = ["Pending", "Approved", "Declined"]
 EDITABLE_LISTS = ["leaveReasons", "wfhReasons", "durations"]
 KINDS = ("leave", "wfh")
+ALL_TEAMS = "All Teams"          # a membership that counts as every team
 
 
 class RuleError(Exception):
@@ -157,6 +158,23 @@ def remove_option(state, key, value):
     state["plannedReasons"] = [v for v in state["plannedReasons"] if v != value]
 
 
+# ---------------------------------------------------------------- teams
+def add_team(state, name):
+    name = " ".join(str(name or "").split())
+    if not 1 <= len(name) <= 40:
+        raise RuleError("A team name needs 1 to 40 characters")
+    if name.lower() in [t.lower() for t in state.setdefault("teams", [])] + [ALL_TEAMS.lower()]:
+        raise RuleError('"%s" already exists' % name)
+    state["teams"].append(name)
+    return name
+
+
+def remove_team(state, name):
+    if name not in state.get("teams", []):
+        raise RuleError("Team not found")
+    state["teams"] = [t for t in state["teams"] if t != name]
+
+
 # ---------------------------------------------------------------- cleanup
 def purge(state, cutoff, opts):
     removed = {"leave": 0, "wfh": 0}
@@ -199,7 +217,7 @@ def empty_seed():
 def fresh_state(seed, seed_hash):
     return {
         "leave": seed["leave"], "wfh": seed["wfh"], "validation": seed["validation"],
-        "plannedReasons": list(PLANNED_REASONS), "audit": [],
+        "plannedReasons": list(PLANNED_REASONS), "audit": [], "teams": [],
         "seedHash": seed_hash, "seedGeneratedAt": seed.get("generatedAt", ""),
     }
 
@@ -241,22 +259,49 @@ def sync_from_seed(state, seed, seed_hash):
 
 
 # ---------------------------------------------------------------- permissions
-def team_of(viewer, users):
-    """Employee IDs the viewer has full access to, or None meaning everyone.
-    Admin: everyone. Manager: themselves and everyone below them in the reporting
-    chain - people assigned to them, people assigned to those managers, and so on.
-    Employee: themselves."""
-    if viewer["role"] == "admin":
-        return None
-    ids = {viewer["emp_id"]}
-    if viewer["role"] == "manager":
-        frontier = [viewer["emp_id"]]
-        while frontier:                 # skipping ids already seen also stops loops (A -> B -> A)
-            below = [u["emp_id"] for u in users.values()
-                     if u.get("manager_emp_id") in frontier and u["emp_id"] not in ids]
-            ids.update(below)
-            frontier = below
-    return ids
+#   Teams decide who sees whom; the reporting chain decides who a manager acts for.
+def shares_team(viewer, emp_id, users):
+    """Whether emp_id is in one of the viewer's teams. All Teams on either side
+    matches every team. Someone with no team - or no login - matches none."""
+    mine = set(viewer.get("teams") or [])
+    theirs = set((users.get(emp_id) or {}).get("teams") or [])
+    if ALL_TEAMS in mine:
+        return True
+    return bool(mine) and (ALL_TEAMS in theirs or bool(mine & theirs))
+
+
+def can_see(viewer, emp_id, users):
+    """Whether anything about someone reaches the viewer. Admin: everyone.
+    Everyone else: themselves and people sharing one of their teams - nothing at
+    all about anyone else."""
+    return viewer["role"] == "admin" or emp_id == viewer["emp_id"] or shares_team(viewer, emp_id, users)
+
+
+def sees_in_full(viewer, emp_id, users):
+    """Admin: everyone. Manager: everyone they can see. Employee: themselves -
+    teammates arrive without reason or comments (see view_for)."""
+    if viewer["role"] == "admin" or emp_id == viewer["emp_id"]:
+        return True
+    return viewer["role"] == "manager" and can_see(viewer, emp_id, users)
+
+
+def reporting_chain(manager, users):
+    """Employee IDs below a manager: people assigned to them, people assigned to
+    those managers, and so on."""
+    ids, frontier = {manager["emp_id"]}, [manager["emp_id"]]
+    while frontier:                     # skipping ids already seen also stops loops (A -> B -> A)
+        below = [u["emp_id"] for u in users.values()
+                 if u.get("manager_emp_id") in frontier and u["emp_id"] not in ids]
+        ids.update(below)
+        frontier = below
+    return ids - {manager["emp_id"]}
+
+
+def manages(viewer, emp_id, users):
+    """A manager acts for someone - files, decides, deletes - only when that person
+    is below them in the reporting chain AND in one of their teams."""
+    return (viewer["role"] == "manager" and emp_id != viewer["emp_id"]
+            and shares_team(viewer, emp_id, users) and emp_id in reporting_chain(viewer, users))
 
 
 def roster(state, users):
@@ -274,51 +319,38 @@ def roster(state, users):
 
 
 def can_decide(viewer, rec, users):
-    """Admin: anything. Manager: requests from anyone below them in the reporting
-    chain, never their own. Employee: nothing."""
-    if viewer["role"] == "admin":
-        return True
-    if viewer["role"] != "manager" or rec.get("empId") == viewer["emp_id"]:
-        return False
-    return rec.get("empId") in team_of(viewer, users)
+    """Admin: anything. Manager: requests from people they manage (see manages),
+    never their own. Employee: nothing."""
+    return viewer["role"] == "admin" or manages(viewer, rec.get("empId"), users)
 
 
 def can_file_for(viewer, emp_id, users):
-    """Admin: anyone. Manager: themselves and active people below them in the
-    reporting chain. Employee: themselves."""
+    """Admin: anyone. Manager: themselves and active people they manage.
+    Employee: themselves."""
     if emp_id == viewer["emp_id"] or viewer["role"] == "admin":
         return True
     owner = users.get(emp_id)
-    return bool(viewer["role"] == "manager" and owner and owner["active"]
-                and emp_id in team_of(viewer, users))
+    return bool(owner and owner["active"] and manages(viewer, emp_id, users))
 
 
 def can_delete(viewer, rec, users):
-    """Admin: any record. Manager: any record of people below them in the chain.
+    """Admin: any record. Manager: any record of people they manage.
     Everyone: withdraw their own request while it is still pending."""
     if viewer["role"] == "admin":
         return True
     if rec.get("empId") == viewer["emp_id"]:
         return rec.get("status") == "Pending"
-    return can_decide(viewer, rec, users)
-
-
-def can_see(viewer, emp_id, users):
-    """Whether anything about someone reaches the viewer. A manager: only their
-    own team - nothing at all about anyone else. Admin: everyone. Employee:
-    everyone, but colleagues arrive redacted (see view_for)."""
-    return viewer["role"] != "manager" or emp_id in team_of(viewer, users)
+    return manages(viewer, rec.get("empId"), users)
 
 
 def view_for(state, viewer, users):
-    """The slice of state a viewer may see. Managers get their own team only.
-    Employees get the whole team calendar but details only for themselves:
-    reasons, comments and approver are stripped from colleagues' records (the
-    reason also drives the planned/unplanned colour, so it has to go too)."""
-    team = team_of(viewer, users)
-    full = lambda emp_id: team is None or emp_id in team
+    """The slice of state a viewer may see: only people sharing one of their teams
+    (everyone for an admin). Managers see those people in full. Employees see
+    only their own details: reasons, comments and approver are stripped from
+    teammates' records (the reason also drives the planned/unplanned colour, so
+    it has to go too)."""
     out = {k: state[k] for k in ("validation", "plannedReasons", "seedGeneratedAt")}
-    out["people"] = sorted(({"empId": emp_id, "name": name, "full": full(emp_id),
+    out["people"] = sorted(({"empId": emp_id, "name": name, "full": sees_in_full(viewer, emp_id, users),
                              "canApply": can_file_for(viewer, emp_id, users)}
                             for emp_id, name in roster(state, users).items()
                             if can_see(viewer, emp_id, users)),
@@ -328,7 +360,7 @@ def view_for(state, viewer, users):
         for r in state[kind]:
             if not can_see(viewer, r.get("empId"), users):
                 continue
-            if not full(r.get("empId")):
+            if not sees_in_full(viewer, r.get("empId"), users):
                 r = {f: r.get(f) for f in ("id", "empId", "name", "from", "to", "duration", "days", "status")}
                 r.update(reason=None, comment="", redacted=True)
             else:
@@ -337,4 +369,5 @@ def view_for(state, viewer, users):
         out[kind] = rows
     if viewer["role"] == "admin":
         out["audit"] = state.get("audit", [])[:100]
+        out["teams"] = state.get("teams", [])
     return out

@@ -74,7 +74,8 @@
       U.avatar(user.name),
       el('div', { style: 'line-height:1.25' }, [
         el('div', { style: 'font-weight:700;font-size:13px', text: user.name }),
-        el('div', { class: 'sub', style: 'font-size:11px', text: (ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId })
+        el('div', { class: 'sub', style: 'font-size:11px', text: (ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId +
+          (user.teams && user.teams.length ? ' · ' + user.teams.join(', ') : '') })
       ])
     ]);
   }

@@ -54,7 +54,7 @@
           oninput: function (e) { view.q = e.target.value; W.app.rerender(); }
         })]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Member',
-          sel('person', [{ v: 'all', t: S.is('admin') ? 'Everyone' : 'My team' }].concat(S.teamPeople().map(function (p) { return { v: p.name, t: p.name }; })))]),
+          sel('person', [{ v: 'all', t: S.seesEveryone() ? 'Everyone' : 'My team' }].concat(S.teamPeople().map(function (p) { return { v: p.name, t: p.name }; })))]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Status',
           sel('status', [{ v: 'all', t: 'All' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }, { v: 'Declined', t: 'Declined' }])]),
         el('button', { class: 'btn', text: '⬇ CSV', onclick: function () { exportCSV(list, cols); } })
