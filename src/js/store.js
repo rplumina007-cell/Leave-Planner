@@ -46,6 +46,19 @@
   var ALL_TEAMS = 'All Teams';
   /* Admins and anyone in All Teams see everyone; everyone else only people sharing a team. */
   function seesEveryone() { return is('admin') || (state.me.teams || []).indexOf(ALL_TEAMS) !== -1; }
+  /* Employee IDs (as keys) of people explicitly in a team - admin view, which has
+     everyone's teams. NO_TEAM: people with no team, including those with no login.
+     All Teams members only count under "all teams", so they don't skew team figures. */
+  var NO_TEAM = '__no_team__';
+  function teamMemberIds(teamName) {
+    var teamsOf = {}, ids = {};
+    (state.team || []).forEach(function (u) { teamsOf[u.empId] = u.teams || []; });
+    state.people.forEach(function (p) {
+      var t = teamsOf[p.empId] || [];
+      if (teamName === NO_TEAM ? !t.length : t.indexOf(teamName) !== -1) ids[p.empId] = true;
+    });
+    return ids;
+  }
 
   /* ---------- domain rules (display only; the server re-checks) ---------- */
   var PLANNED_REASONS = ['Planned Leave', 'Compoff', 'My Day'];
@@ -225,6 +238,7 @@
     get state() { return state; },
     subscribe: function (fn) { subs.push(fn); },
     me: me, role: role, is: is, seesEveryone: seesEveryone, ALL_TEAMS: ALL_TEAMS,
+    NO_TEAM: NO_TEAM, teamMemberIds: teamMemberIds,
     BUCKETS: BUCKETS, PLANNED_REASONS: PLANNED_REASONS, EDITABLE_LISTS: EDITABLE_LISTS, UNITS: UNITS,
     isPlanned: isPlanned, isHalf: isHalf, bucketOf: bucketOf, expand: expand, computeDays: computeDays,
     all: all, visible: visible, teamPeople: teamPeople, applyPeople: applyPeople, both: both, byDate: byDate, pending: pending, decided: decided, actionable: actionable,

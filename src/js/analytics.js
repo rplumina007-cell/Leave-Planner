@@ -33,8 +33,11 @@
 
   function compute(opts) {
     var o = opts || {};
-    /* Only what this user has full access to: everyone for an admin, a manager's team. */
-    var st = { leave: S.visible('leave'), wfh: S.visible('wfh'), people: S.teamPeople() };
+    /* Only what this user has full access to (everyone for an admin, a manager's
+       teams), narrowed to one team when an admin picks it. */
+    var ids = o.team && o.team !== 'all' ? S.teamMemberIds(o.team) : null;
+    var inTeam = function (x) { return !ids || !!ids[x.empId]; };
+    var st = { leave: S.visible('leave').filter(inTeam), wfh: S.visible('wfh').filter(inTeam), people: S.teamPeople().filter(inTeam) };
     var months = monthSpan(o.from, o.to);
     var leave = st.leave.filter(function (r) { return inScope(r, o); });
     var wfh = st.wfh.filter(function (r) { return inScope(r, o); });
