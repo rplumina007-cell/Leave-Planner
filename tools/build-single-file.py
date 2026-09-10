@@ -3,7 +3,7 @@
 
     python tools/build-single-file.py
 
-Writes dist/wfs-tracker.html - a single self-contained page you can email, drop
+Writes dist/leave-planner.html - a single self-contained page you can email, drop
 on a share, or host anywhere. Reads the script/link tags out of index.html, so
 adding a new page file needs no change here.
 """
@@ -56,11 +56,11 @@ def main():
 
     out_dir = os.path.join(ROOT, "dist")
     os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, "wfs-tracker.html")
+    out = os.path.join(out_dir, "leave-planner.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print("wrote dist/wfs-tracker.html (%.0f KB)  build %s" % (os.path.getsize(out) / 1024, stamp))
+    print("wrote dist/leave-planner.html (%.0f KB)  build %s" % (os.path.getsize(out) / 1024, stamp))
 
 
 if __name__ == "__main__":

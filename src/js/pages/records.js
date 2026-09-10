@@ -119,7 +119,7 @@
     var blob = new Blob([head + '\n' + body], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'wfs-' + view.kind + '-' + U.todayISO() + '.csv';
+    a.download = 'leave-planner-' + view.kind + '-' + U.todayISO() + '.csv';
     a.click();
     URL.revokeObjectURL(a.href);
   }

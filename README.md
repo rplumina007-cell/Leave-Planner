@@ -1,6 +1,6 @@
-# WFS Tracker
+# Leave Planner
 
-A web app replacing the WFS Tracker Google Sheet: a team leave/WFH calendar, a
+A web app replacing the team's leave/WFH tracker Google Sheet: a team calendar, a
 manager approval queue, and combined leave + WFH dashboards.
 
 The repository holds code only. Team data is imported from the tracker Google

@@ -354,7 +354,7 @@
           }),
           el('button', {
             class: 'btn', text: '⬇ Export backup (JSON)', onclick: function () {
-              S.exportJSON().then(function (text) { download(text, 'wfs-tracker-' + U.todayISO() + '.json', 'application/json'); },
+              S.exportJSON().then(function (text) { download(text, 'leave-planner-' + U.todayISO() + '.json', 'application/json'); },
                 function (e) { U.toast(e.message); });
             }
           })

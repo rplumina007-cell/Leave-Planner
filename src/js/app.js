@@ -89,7 +89,7 @@
     }));
 
     return el('header', { class: 'topbar' }, [
-      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'W' }), el('span', { text: 'WFS Tracker' })]),
+      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'L' }), el('span', { text: 'Leave Planner' })]),
       nav,
       el('span', { class: 'spacer' }),
       identity(me),
@@ -181,7 +181,7 @@
     var root = document.getElementById('root');
     U.clear(root);
     root.appendChild(el('header', { class: 'topbar' }, [
-      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'W' }), el('span', { text: 'WFS Tracker' })]),
+      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'L' }), el('span', { text: 'Leave Planner' })]),
       el('span', { class: 'spacer' }),
       identity(user),
       themeButton(),
