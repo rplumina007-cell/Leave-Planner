@@ -191,23 +191,73 @@ class _Request:
 _hosted_app = None
 
 
-def from_environment():
-    url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
-    hosted = bool(os.environ.get("VERCEL"))
+class StartupError(Exception):
+    """Why the hosted app couldn't start, in words that are safe to show publicly."""
+
+    def __init__(self, reason, hint):
+        super().__init__(hint)
+        self.reason, self.hint = reason, hint
+
+
+def database_url_from_environment(env=None):
+    """The hosted database URL. Vercel's Neon integration sets DATABASE_URL or
+    POSTGRES_URL, or prefixed versions (e.g. STORAGE_DATABASE_URL) when a prefix
+    was chosen while connecting. Unpooled/direct variants are skipped in favour
+    of the pooled connection, which suits many short-lived function instances."""
+    env = os.environ if env is None else env
+    for key in ("DATABASE_URL", "POSTGRES_URL"):
+        if env.get(key):
+            return env[key]
+    for key in sorted(env):
+        if (key.endswith(("_DATABASE_URL", "_POSTGRES_URL")) and env[key]
+                and not any(x in key for x in ("UNPOOLED", "NON_POOLING", "NO_SSL"))):
+            return env[key]
+    return None
+
+
+def from_environment(env=None):
+    env = os.environ if env is None else env
+    url = database_url_from_environment(env)
+    hosted = bool(env.get("VERCEL"))
     if hosted and not url:
-        raise RuntimeError("DATABASE_URL is not set: connect a Neon database to this Vercel project.")
-    return App(url or config.default_db_path(), config.SEED_PATH, secure=hosted, trust_proxy=hosted)
+        raise StartupError("database-not-configured",
+                           "No database connection found. Connect the Neon database to this "
+                           "Vercel project, then redeploy.")
+    if url and dbm.is_postgres(url):
+        try:
+            import psycopg  # noqa: F401
+        except ImportError:
+            raise StartupError("database-driver-missing",
+                               "The Postgres driver (psycopg) is not installed in this deployment.")
+    try:
+        return App(url or config.default_db_path(), config.SEED_PATH, secure=hosted, trust_proxy=hosted)
+    except Exception as e:
+        traceback.print_exc()                      # full detail goes to the host's logs only
+        raise StartupError("database-unreachable",
+                           "Could not connect to the database (%s)." % type(e).__name__)
+
+
+def _startup_error(start_response, err):
+    body = json.dumps({"error": "The site isn't ready yet", "reason": err.reason, "hint": err.hint}).encode("utf-8")
+    start_response("503 Service Unavailable", [("Content-Type", "application/json"),
+                                               ("Content-Length", str(len(body))),
+                                               ("Cache-Control", "no-store")])
+    return [body]
 
 
 def application(environ, start_response):
-    """Built on the first request, so importing this module never touches a database."""
+    """Built on the first request, so importing this module never touches a
+    database. A failed start is retried on the next request."""
     global _hosted_app
-    try:
-        if _hosted_app is None:
+    if _hosted_app is None:
+        try:
             _hosted_app = from_environment()
-    except Exception:
-        traceback.print_exc()
-        return _server_error(start_response)
+        except StartupError as err:
+            print("Startup failed: %s - %s" % (err.reason, err.hint), file=sys.stderr)
+            return _startup_error(start_response, err)
+        except Exception:
+            traceback.print_exc()
+            return _server_error(start_response)
     return _hosted_app(environ, start_response)
 
 
