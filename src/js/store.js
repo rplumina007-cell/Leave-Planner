@@ -15,6 +15,8 @@
     next.audit = next.audit || [];
     next.plannedReasons = next.plannedReasons || PLANNED_REASONS.slice();
     next.people = next.people || [];
+    next.holidays = next.holidays || [];
+    U.setHolidays(next.holidays);
     state = next;
     subs.forEach(function (fn) { fn(state); });
     return state;
@@ -81,15 +83,15 @@
 
   function expand(rec) {
     if (isHalf(rec)) {
-      var d = U.parse(rec.from);
-      return U.isWeekend(d) ? [] : [{ date: rec.from, fraction: 0.5 }];
+      return U.isWorkingDay(U.parse(rec.from)) ? [{ date: rec.from, fraction: 0.5 }] : [];
     }
     return U.workingDaysBetween(rec.from, rec.to || rec.from).map(function (day) {
       return { date: day, fraction: 1 };
     });
   }
+  /* Mirrors domain.compute_days: weekends and public holidays never count. */
   function computeDays(from, to, duration) {
-    if (String(duration).indexOf('Half') === 0) return 0.5;
+    if (String(duration).indexOf('Half') === 0) return U.isWorkingDay(U.parse(from)) ? 0.5 : 0;
     return U.workingDaysBetween(from, to || from).length;
   }
 
@@ -105,6 +107,11 @@
     return state.leave.map(tagKind('leave')).concat(state.wfh.map(tagKind('wfh')));
   }
   function tagKind(kind) { return function (r) { var c = Object.create(r); c.kind = kind; return c; }; }
+  /* The signed-in person's own requests (both kinds, tagged with .kind). */
+  function myRequests() {
+    var id = state.me.empId;
+    return both().filter(function (r) { return r.empId === id; });
+  }
 
   function byDate(filter) {
     var map = {};
@@ -198,7 +205,13 @@
   function decide(kind, id, status, note) {
     return call('/api/requests/decide', { kind: kind, id: id, status: status, note: note || '' });
   }
+  /* Put a decided request back to pending - the Undo after approving or declining. */
+  function undoDecision(kind, id) {
+    return call('/api/requests/decide', { kind: kind, id: id, status: 'Pending' });
+  }
   function withdraw(kind, id) { return call('/api/requests/delete', { kind: kind, id: id }); }
+  function addHoliday(date, name) { return call('/api/holidays/add', { date: date, name: name }, { raise: true }); }
+  function removeHoliday(date) { return call('/api/holidays/remove', { date: date }); }
 
   function addOption(key, value, planned) {
     return call('/api/options/add', { key: key, value: value, planned: !!planned }, { raise: true });
@@ -246,7 +259,8 @@
     cutoffFor: cutoffFor, previewPurge: previewPurge,
     seedIsNewer: function () { return !!state.seedIsNewer; },
     seedInfo: function () { return { generatedAt: state.seedGeneratedAt || '' }; },
-    submit: submit, decide: decide, withdraw: withdraw,
+    submit: submit, decide: decide, undoDecision: undoDecision, withdraw: withdraw, myRequests: myRequests,
+    addHoliday: addHoliday, removeHoliday: removeHoliday,
     addOption: addOption, removeOption: removeOption, setPlannedReason: setPlannedReason,
     purge: purge, syncFromSeed: syncFromSeed,
     createUser: createUser, updateUser: updateUser, resetPassword: resetPassword, deleteUser: deleteUser,

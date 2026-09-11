@@ -4,9 +4,9 @@
    Planned Leave / Unplanned Leave / Planned Half Day / Unplanned Half Day. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, C = W.charts, A = W.analytics, TF = W.teamFilter, el = U.el;
+  var U = W.util, S = W.store, C = W.charts, A = W.analytics, TF = W.teamFilter, el = U.el, I = W.icon;
 
-  var view = { tab: 'leave', from: null, to: null, team: 'all', person: 'all', includePending: true };
+  var view = { tab: 'leave', from: null, to: null, preset: 'All time', team: 'all', person: 'all', includePending: true };
 
   /* Reason mixes are palette-matched to their dashboard: leave reasons lead with
      the leave category colours, WFH reasons lead with the WFH teal. Sharing one
@@ -37,9 +37,9 @@
     return el('div', {}, [
       el('div', { class: 'row', style: 'margin-bottom:14px' }, [
         el('div', { class: 'tabs' }, [
-          tabBtn('leave', '🌴 Leave dashboard', d.leave.length),
-          tabBtn('wfh', '🏠 WFH dashboard', d.wfh.length),
-          tabBtn('combined', '⚖️ Combined', d.leave.length + d.wfh.length)
+          tabBtn('leave', 'leave', 'Leave dashboard', d.leave.length),
+          tabBtn('wfh', 'home', 'WFH dashboard', d.wfh.length),
+          tabBtn('combined', 'scale', 'Combined', d.leave.length + d.wfh.length)
         ]),
         el('span', { style: 'flex:1' }),
         el('span', {
@@ -55,11 +55,11 @@
     ]);
   }
 
-  function tabBtn(id, label, n) {
+  function tabBtn(id, icon, label, n) {
     return el('button', {
-      class: view.tab === id ? 'on' : '',
+      class: view.tab === id ? 'on' : '', type: 'button',
       onclick: function () { view.tab = id; W.app.rerender(); }
-    }, [label, el('span', { class: 'count', text: String(n) })]);
+    }, [I(icon), label, el('span', { class: 'count', text: String(n) })]);
   }
 
   /* ---------- part 1: leave only ---------- */
@@ -144,9 +144,23 @@
     function monthInput(key) {
       return el('input', {
         type: 'month', value: view[key],
-        onchange: function (e) { view[key] = e.target.value; W.app.rerender(); }
+        onchange: function (e) { view[key] = e.target.value; view.preset = null; W.app.rerender(); }
       });
     }
+    /* One-click ranges; picking months by hand clears the highlight. */
+    var nowKey = U.todayISO().slice(0, 7), year = nowKey.slice(0, 4), month = +nowKey.slice(5, 7);
+    var PRESETS = [
+      { t: 'This month', from: nowKey, to: nowKey },
+      { t: 'This quarter', from: year + '-' + U.pad(Math.floor((month - 1) / 3) * 3 + 1), to: nowKey },
+      { t: 'Year to date', from: year + '-01', to: nowKey },
+      { t: 'All time', from: null, to: null }
+    ];
+    var presets = el('div', { class: 'seg', role: 'group', 'aria-label': 'Date range' }, PRESETS.map(function (p) {
+      return el('button', {
+        type: 'button', class: view.preset === p.t ? 'on' : '', 'aria-pressed': view.preset === p.t ? 'true' : 'false',
+        onclick: function () { view.preset = p.t; view.from = p.from; view.to = p.to; W.app.rerender(); }
+      }, [p.t]);
+    }));
     var person = el('select', {
       onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
     }, [{ v: 'all', t: view.team !== 'all' ? 'Whole team' : S.seesEveryone() ? 'Everyone' : 'My team' }]
@@ -154,7 +168,8 @@
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
 
     return el('div', { class: 'card', style: 'margin-bottom:18px' }, [
-      el('div', { class: 'card-h', style: 'border-bottom:0' }, [
+      el('div', { class: 'card-h', style: 'border-bottom:0;align-items:flex-end' }, [
+        el('div', { class: 'f', style: 'font-size:11px' }, ['Range', presets]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['From', monthInput('from')]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['To', monthInput('to')]),
         TF.control(),
@@ -171,7 +186,7 @@
         ]),
         el('button', {
           class: 'btn sm', text: 'Reset', onclick: function () {
-            view.from = null; view.to = null; TF.reset(); view.person = 'all'; view.includePending = true; W.app.rerender();
+            view.from = null; view.to = null; view.preset = 'All time'; TF.reset(); view.person = 'all'; view.includePending = true; W.app.rerender();
           }
         })
       ])

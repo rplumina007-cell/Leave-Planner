@@ -20,7 +20,9 @@
   --surface-3:#f0ebe2;
   --line:rgba(120,98,74,.20);
   --line-strong:rgba(120,98,74,.30);
-  --text:#241f1a; --muted:#6b6157; --faint:#9a8f82;
+  /* muted and faint are dark enough for small text to meet WCAG AA (4.5:1),
+     including on the weekend/holiday stock */
+  --text:#241f1a; --muted:#5c534a; --faint:#726759;
 
   /* --- leave = terracotta, wfh = teal --- */
   --leave:#a63d1f; --leave-bg:rgba(166,61,31,.11); --leave-line:rgba(166,61,31,.32);
@@ -87,7 +89,7 @@
     --surface-3:#2c251e;
     --line:rgba(226,196,158,.18);
     --line-strong:rgba(226,196,158,.28);
-    --text:#f2ece3; --muted:#b3a695; --faint:#8a7d6c;
+    --text:#f2ece3; --muted:#b3a695; --faint:#9c8f7d;
 
     --leave:#f0a179; --leave-bg:rgba(240,161,121,.15); --leave-line:rgba(240,161,121,.34);
     --wfh:#5fcfcf;  --wfh-bg:rgba(95,207,207,.14);   --wfh-line:rgba(95,207,207,.32);
@@ -120,7 +122,7 @@
   --surface-3:#2c251e;
   --line:rgba(226,196,158,.18);
   --line-strong:rgba(226,196,158,.28);
-  --text:#f2ece3; --muted:#b3a695; --faint:#8a7d6c;
+  --text:#f2ece3; --muted:#b3a695; --faint:#9c8f7d;
   --leave:#f0a179; --leave-bg:rgba(240,161,121,.15); --leave-line:rgba(240,161,121,.34);
   --wfh:#5fcfcf;  --wfh-bg:rgba(95,207,207,.14);   --wfh-line:rgba(95,207,207,.32);
   --ok:#8ec97a; --ok-bg:rgba(142,201,122,.15);
@@ -397,3 +399,115 @@ tbody tr:hover{background:var(--surface-2)}
   *{animation:none!important;transition:none!important}
   .card:hover,.kpi:hover,.btn:hover,.iconbtn:hover{transform:none}
 }
+
+/* ---------- icons ---------- */
+.ico{width:1em;height:1em;flex:none;vertical-align:-.14em;stroke:currentColor;fill:none;
+  stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px}
+.btn .ico{font-size:15px}
+.btn.sm .ico{font-size:13px}
+.iconbtn .ico{font-size:17px}
+.tabs button .ico{font-size:15px}
+.pill .ico{font-size:12.5px}
+.sub .ico,.legend .ico,.stat .ico{font-size:14px}
+.chip .ico{font-size:11.5px}
+.empty .ico{display:block;font-size:30px;margin:0 auto 8px;color:var(--ok)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend b{margin-right:2px}
+
+/* ---------- profile menu ---------- */
+.menu-wrap{position:relative}
+.who-btn{display:flex;align-items:center;gap:9px;background:none;border:1px solid transparent;
+  border-radius:var(--r-xs);padding:4px 8px 4px 4px;cursor:pointer;text-align:left;color:inherit;transition:.18s}
+.who-btn:hover,.who-btn[aria-expanded="true"]{background:var(--surface-2);border-color:var(--line)}
+.who-btn>.ico{font-size:15px;color:var(--muted)}
+.menu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;min-width:260px;padding:6px;
+  background:var(--surface-solid);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--lift-3)}
+.menu .mi{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;background:none;
+  border-radius:var(--r-xs);cursor:pointer;font-weight:600;font-size:13px;color:var(--text);text-align:left}
+.menu .mi:hover,.menu .mi:focus-visible{background:var(--surface-2);outline:none}
+.menu .mi .ico{font-size:17px;color:var(--muted)}
+.menu .sep{height:1px;background:var(--line);margin:6px 4px}
+.menu .mlabel{padding:6px 10px 5px;font-size:10.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--faint)}
+.seg{display:flex;gap:3px;padding:3px;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs)}
+.menu .seg{margin:0 6px 4px}
+.seg button{flex:1;border:0;background:none;padding:6px 10px;border-radius:6px;cursor:pointer;
+  font-size:12px;font-weight:650;color:var(--muted);white-space:nowrap}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--surface-solid);color:var(--text);box-shadow:var(--lift-1)}
+
+/* ---------- notices ---------- */
+.notice{margin-bottom:18px;border-left:4px solid var(--ok)}
+.notice .nl{display:flex;align-items:flex-start;gap:9px;font-size:13px;padding:3px 0}
+.notice .nl .ico{font-size:17px;margin-top:1px}
+
+/* ---------- calendar: holidays, drag to apply, my requests ---------- */
+.calgrid{user-select:none;-webkit-user-select:none}
+.day.hol{background-color:var(--surface-3);border-style:dashed}
+.holname{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;color:var(--accent);
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;min-width:0}
+.holname .ico{font-size:11px}
+.day.rng{box-shadow:0 0 0 2px var(--wfh), var(--lift-2);z-index:3}
+.hint{font-size:11.5px;color:var(--faint);font-weight:500}
+.stat{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stat .sub{display:inline-flex;align-items:center;gap:7px}
+
+/* ---------- toasts with an action ---------- */
+.toast{display:flex;align-items:center;gap:16px}
+.toast-action{background:none;border:0;color:inherit;font:inherit;font-weight:800;cursor:pointer;
+  padding:2px 2px;text-decoration:underline;text-underline-offset:3px}
+
+/* ---------- settings page ---------- */
+.settings{display:grid;grid-template-columns:210px minmax(0,1fr);gap:18px;align-items:start}
+.snav{display:flex;flex-direction:column;gap:3px;padding:8px}
+.snav button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:9px 12px;
+  border-radius:var(--r-xs);cursor:pointer;font-weight:650;font-size:13px;color:var(--muted);text-align:left;white-space:nowrap}
+.snav button:hover{color:var(--text);background:var(--surface-2)}
+.snav button.on{background:var(--surface-2);color:var(--text)}
+.snav .ico{font-size:17px}
+.bulkbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--accent);
+  border-radius:var(--r-xs);background:var(--accent-soft)}
+.bulkbar select{background:var(--surface-solid);border:1px solid var(--line);border-radius:var(--r-xs);padding:6px 9px;font-size:13px}
+.searchbox{display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line);
+  border-radius:var(--r-xs);padding:0 10px;color:var(--muted)}
+.searchbox input{border:0;background:none;padding:8px 0;font-size:13px;min-width:190px;outline:none;color:var(--text)}
+
+/* ---------- phones ---------- */
+.agenda{display:flex;flex-direction:column}
+.agenda .arow{display:grid;grid-template-columns:52px minmax(0,1fr);gap:12px;padding:10px 14px;
+  border-bottom:1px solid var(--line);align-items:start}
+.agenda .arow:last-child{border-bottom:0}
+.agenda .arow.today{background:var(--accent-soft)}
+.agenda .arow.hol{background:var(--surface-3)}
+.agenda .adate{display:flex;flex-direction:column;align-items:center;line-height:1.15}
+.agenda .adate b{font-family:var(--display);font-size:19px}
+.agenda .adate span{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+.agenda .achips{display:flex;flex-direction:column;gap:5px;min-width:0}
+.agenda .chip{font-size:12.5px;padding:6px 10px}
+.mobile-apply{display:none}
+@media(max-width:760px){
+  .mobile-apply{display:flex;gap:8px;position:fixed;left:0;right:0;bottom:0;z-index:50;
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+    background:var(--surface);border-top:1px solid var(--line);
+    -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+  .mobile-apply .btn{flex:1;padding:12px}
+  .app{padding-bottom:100px}
+  .apply-card{display:none}
+  .topbar{position:static}
+  .who-text{display:none}
+  .settings{grid-template-columns:1fr}
+  .snav{flex-direction:row;overflow-x:auto}
+}
+
+/* ---------- sign-in extras ---------- */
+.pw-wrap{position:relative;display:flex}
+label.f .pw-wrap>input{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-xs);
+  padding:9px 46px 9px 11px;font-weight:500;font-size:13px;color:var(--text);width:100%;
+  text-transform:none;letter-spacing:0;transition:.18s}
+label.f .pw-wrap>input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.pw-toggle{position:absolute;right:5px;top:50%;transform:translateY(-50%);width:34px;height:30px;
+  display:grid;place-items:center;border:0;background:none;border-radius:6px;cursor:pointer;color:var(--muted)}
+.pw-toggle:hover{background:var(--surface-3);color:var(--text)}
+.pw-toggle svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.caps{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--warn);text-transform:none;letter-spacing:0}

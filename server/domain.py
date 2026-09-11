@@ -24,12 +24,13 @@ def parse(iso):
     return dt.date.fromisoformat(str(iso)[:10])
 
 
-def working_days_between(frm, to):
+def working_days_between(frm, to, holidays=()):
+    """Mon-Fri dates in the range, skipping any public holidays given."""
     d, end, out = parse(frm), parse(to or frm), []
     if (end - d).days > 800:
         raise RuleError("Date range is too long")
     while d <= end:
-        if d.weekday() < 5:
+        if d.weekday() < 5 and d.isoformat() not in holidays:
             out.append(d.isoformat())
         d += dt.timedelta(days=1)
     return out
@@ -39,10 +40,10 @@ def is_half(duration):
     return str(duration).startswith("Half")
 
 
-def compute_days(frm, to, duration):
+def compute_days(frm, to, duration, holidays=()):
     if is_half(duration):
-        return 0.5
-    return len(working_days_between(frm, to or frm))
+        return 0.5 if working_days_between(frm, frm, holidays) else 0
+    return len(working_days_between(frm, to or frm, holidays))
 
 
 def cutoff_for(amount, unit, today=None):
@@ -104,9 +105,9 @@ def build_request(state, kind, body, owner):
         raise RuleError("Invalid date")
     if to < frm:
         raise RuleError("End date is before start date")
-    days = compute_days(frm, to, duration)
+    days = compute_days(frm, to, duration, holiday_dates(state))
     if not days:
-        raise RuleError("That range has no working days (Mon-Fri)")
+        raise RuleError("That range has no working days (weekends and public holidays don't count)")
     return {
         "id": next_id(state[kind], kind), "empId": owner["emp_id"], "name": owner["name"],
         "from": frm, "to": to, "duration": duration, "days": days, "reason": reason,
@@ -175,6 +176,35 @@ def remove_team(state, name):
     state["teams"] = [t for t in state["teams"] if t != name]
 
 
+# ---------------------------------------------------------------- public holidays
+#   Holidays count as non-working days for new requests and in dashboard maths.
+#   Existing records keep the day counts they were created with.
+def holiday_dates(state):
+    return {h["date"] for h in state.get("holidays", [])}
+
+
+def add_holiday(state, date, name):
+    try:
+        day = parse(date).isoformat()
+    except (ValueError, TypeError):
+        raise RuleError("Pick a valid date")
+    name = " ".join(str(name or "").split())
+    if not 1 <= len(name) <= 60:
+        raise RuleError("Give the holiday a name (up to 60 characters)")
+    if day in holiday_dates(state):
+        raise RuleError("%s is already a holiday" % day)
+    state.setdefault("holidays", []).append({"date": day, "name": name})
+    state["holidays"].sort(key=lambda h: h["date"])
+    return day
+
+
+def remove_holiday(state, date):
+    kept = [h for h in state.get("holidays", []) if h["date"] != date]
+    if len(kept) == len(state.get("holidays", [])):
+        raise RuleError("Holiday not found")
+    state["holidays"] = kept
+
+
 # ---------------------------------------------------------------- cleanup
 def purge(state, cutoff, opts):
     removed = {"leave": 0, "wfh": 0}
@@ -217,7 +247,7 @@ def empty_seed():
 def fresh_state(seed, seed_hash):
     return {
         "leave": seed["leave"], "wfh": seed["wfh"], "validation": seed["validation"],
-        "plannedReasons": list(PLANNED_REASONS), "audit": [], "teams": [],
+        "plannedReasons": list(PLANNED_REASONS), "audit": [], "teams": [], "holidays": [],
         "seedHash": seed_hash, "seedGeneratedAt": seed.get("generatedAt", ""),
     }
 
@@ -350,6 +380,7 @@ def view_for(state, viewer, users):
     teammates' records (the reason also drives the planned/unplanned colour, so
     it has to go too)."""
     out = {k: state[k] for k in ("validation", "plannedReasons", "seedGeneratedAt")}
+    out["holidays"] = state.get("holidays", [])
     out["people"] = sorted(({"empId": emp_id, "name": name, "full": sees_in_full(viewer, emp_id, users),
                              "canApply": can_file_for(viewer, emp_id, users)}
                             for emp_id, name in roster(state, users).items()

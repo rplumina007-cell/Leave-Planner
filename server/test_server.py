@@ -223,6 +223,13 @@ def main():
     decide = lambda c, rid, st="Approved": c.req("POST", "/api/requests/decide", {"kind": "leave", "id": rid, "status": st})
     check("manager can't approve own request", decide(m2, m2_id)[0] == 403)
     check("M1 approves M2 (below M1, shares Beta)", decide(m1, m2_id)[0] == 200)
+    s, b = decide(m1, m2_id, "Pending")
+    undone = [r for r in b.get("state", {}).get("leave", []) if r["id"] == m2_id]
+    check("a decision can be undone (back to pending)",
+          s == 200 and undone and undone[0]["status"] == "Pending" and "decidedBy" not in undone[0], undone)
+    check("undoing a request that is already pending is refused", decide(m1, m2_id, "Pending")[0] == 400)
+    check("employee can't undo decisions", e1.req("POST", "/api/requests/decide", {"kind": "leave", "id": m2_id, "status": "Pending"})[0] == 403)
+    check("re-approve after undo", decide(m1, m2_id)[0] == 200)
     s, b = decide(m2, e1_id)
     check("M2 can't decide E1 (not in M2's teams) or learn whose it is", s == 404 and "Eve" not in json.dumps(b), (s, b))
     check("M2 approves E2", decide(m2, e2_id)[0] == 200)
@@ -230,6 +237,9 @@ def main():
     s, b = decide(m1, e5_id)
     check("M1 can't see or decide E5: reports to M1 but in another team", s == 404 and "Gia" not in json.dumps(b), (s, b))
     check("M1 declines E1 with note", m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})[0] == 200)
+    s, b = decide(m1, e1_id, "Pending")
+    back = [r for r in b.get("state", {}).get("leave", []) if r["id"] == e1_id]
+    check("undoing a decline restores the requester's own comment", s == 200 and back and back[0]["comment"] == "", back)
     s, st = m1.req("GET", "/api/state")
     seen = sorted(p["empId"] for p in st["people"])
     owners = {r["empId"] for k in ("leave", "wfh") for r in st[k]}
@@ -302,6 +312,21 @@ def main():
     check("someone with no team sees only themselves", sorted(p["empId"] for p in e5.req("GET", "/api/state")[1]["people"]) == ["E5"])
     check("admin changes someone's teams", admin.req("POST", "/api/users/update", {"empId": "E5", "teams": ["Alpha"]})[0] == 200)
     check("new team takes effect straight away", "E1" in {p["empId"] for p in e5.req("GET", "/api/state")[1]["people"]})
+    add_hol = lambda date, name="Founders Day": admin.req("POST", "/api/holidays/add", {"date": date, "name": name})
+    check("admin adds a public holiday", add_hol("2026-11-03")[0] == 200)
+    check("duplicate holiday refused", add_hol("2026-11-03", "Again")[0] == 400)
+    check("holiday needs a valid date", add_hol("2026-13-45")[0] == 400)
+    check("only admins manage holidays", e5.req("POST", "/api/holidays/add", {"date": "2026-11-04", "name": "Nope"})[0] == 403)
+    s, st5 = e5.req("GET", "/api/state")
+    check("everyone receives the holiday list", s == 200 and st5.get("holidays") == [{"date": "2026-11-03", "name": "Founders Day"}], st5.get("holidays"))
+    hol_req = {"kind": "leave", "forEmpId": "E5", "reason": "Planned Leave"}
+    s, b = admin.req("POST", "/api/requests", dict(hol_req, **{"from": "2026-11-02", "to": "2026-11-04", "duration": "Full Day"}))
+    filed = [r for r in b.get("state", {}).get("leave", []) if r["id"] == b.get("id")]
+    check("a holiday inside a request isn't counted as a leave day", s == 200 and filed and filed[0]["days"] == 2, filed)
+    check("a half day on a holiday is refused",
+          admin.req("POST", "/api/requests", dict(hol_req, **{"from": "2026-11-03", "duration": "Half Day - 1st Half"}))[0] == 400)
+    check("admin removes a holiday", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 200)
+    check("removing an unknown holiday refused", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 400)
     s, b = admin.req("POST", "/api/logout", {})
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
 

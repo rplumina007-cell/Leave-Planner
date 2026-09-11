@@ -29,7 +29,16 @@
         <input id="emp" name="empId" autocomplete="username" required autofocus>
       </label>
       <label class="f">Password
-        <input id="pw" name="password" type="password" autocomplete="current-password" required>
+        <span class="pw-wrap">
+          <input id="pw" name="password" type="password" autocomplete="current-password" required aria-describedby="caps">
+          <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show password" aria-pressed="false" title="Show password">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle><path id="pwSlash" d="M4 4l16 16" display="none"></path></svg>
+          </button>
+        </span>
+        <span class="caps" id="caps" role="status" hidden>
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l9.5 16.5h-19zM12 10v4.5M12 17.2v.1"></path></svg>
+          Caps Lock is on
+        </span>
       </label>
       <div id="err" class="err" role="alert" hidden></div>
       <button class="btn primary" id="go" type="submit" style="padding:11px">Sign in</button>

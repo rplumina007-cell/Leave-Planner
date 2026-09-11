@@ -1,8 +1,10 @@
 /* Manager queue. Two levels of separation, both explicit:
-   Pending vs Decided (tabs), and within each, Leave vs WFH (separate cards). */
+   Pending vs Decided (tabs), and within each, Leave vs WFH (separate cards).
+   Decisions apply at once, with Undo in the confirmation; requests that don't
+   clash with anyone already off can be approved in one go. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el;
+  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el, I = W.icon;
 
   var view = { tab: 'pending', person: 'all', selection: {} };
   var inTeam = function () { return true; };     // refreshed from the team filter on every render
@@ -11,6 +13,10 @@
   /* Decided requests this user could act on - a manager's own reports, or all for an admin. */
   function mine(kind) { return S.decided(kind).filter(function (r) { return r.canDecide; }); }
   function selected() { return Object.keys(view.selection).filter(function (k) { return view.selection[k]; }); }
+  /* No clash with anyone already approved off on the same days. */
+  function clashFree(rec) {
+    return !S.clashes(rec).some(function (o) { return o.rec.status !== 'Pending'; });
+  }
 
   function render(root) {
     inTeam = TF.matches();
@@ -27,14 +33,28 @@
     ]);
 
     var filter = el('select', {
-      onchange: function (e) { view.person = e.target.value; W.app.rerender(); }
+      onchange: function (e) { view.person = e.target.value; view.selection = {}; W.app.rerender(); }
     }, [{ v: 'all', t: 'All team members' }].concat(people.map(function (p) { return { v: p.name, t: p.name }; }))
       .map(function (o) { return el('option', { value: o.v, selected: view.person === o.v || null, text: o.t }); }));
+
+    var eligible = [];
+    if (view.tab === 'pending') {
+      ['leave', 'wfh'].forEach(function (kind) {
+        byPerson(S.actionable(kind)).forEach(function (r) { if (clashFree(r)) eligible.push(selKey(kind, r.id)); });
+      });
+    }
 
     var bar = el('div', { class: 'row', style: 'margin-bottom:16px' }, [
       tabs,
       S.is('manager') ? el('span', { class: 'sub', text: 'Requests from your team' }) : null,
       el('span', { style: 'flex:1' }),
+      eligible.length ? el('button', {
+        class: 'btn ok', type: 'button', title: 'Approves only requests that don’t overlap anyone already approved to be off',
+        onclick: function () {
+          if (confirm('Approve ' + eligible.length + ' request' + (eligible.length === 1 ? '' : 's') +
+            ' that don’t clash with anyone already off?\n\nEach is re-checked just before approving.')) bulk('Approved', eligible, true);
+        }
+      }, [I('check'), 'Approve ' + eligible.length + ' without clashes']) : null,
       TF.control(function () { view.selection = {}; }),     // never bulk-act on requests the filter hides
       el('label', { class: 'f', style: 'font-size:11px' }, ['Filter', filter])
     ]);
@@ -50,9 +70,9 @@
           el('div', { class: 'card-h', style: 'border-bottom:0' }, [
             el('b', { text: picked.length + ' request' + (picked.length > 1 ? 's' : '') + ' selected' }),
             el('span', { style: 'flex:1' }),
-            el('button', { class: 'btn ok', text: '✓ Approve selected', onclick: function () { bulk('Approved'); } }),
-            el('button', { class: 'btn bad', text: '✕ Decline selected', onclick: function () { bulk('Declined'); } }),
-            el('button', { class: 'btn sm', text: 'Clear', onclick: function () { view.selection = {}; W.app.rerender(); } })
+            el('button', { class: 'btn ok', type: 'button', onclick: function () { bulk('Approved', selected()); } }, [I('check'), 'Approve selected']),
+            el('button', { class: 'btn bad', type: 'button', onclick: function () { bulk('Declined', selected()); } }, [I('x'), 'Decline selected']),
+            el('button', { class: 'btn sm', type: 'button', text: 'Clear', onclick: function () { view.selection = {}; W.app.rerender(); } })
           ])
         ]));
       }
@@ -60,7 +80,7 @@
       body.appendChild(queue('wfh', S.actionable('wfh')));
       if (!nPend) {
         body.appendChild(el('div', { class: 'card' }, [
-          el('div', { class: 'empty', html: '<div style="font-size:26px">✅</div>Queue is clear — no requests waiting on you.' })
+          el('div', { class: 'empty' }, [I('check'), 'Queue is clear — no requests waiting on you.'])
         ]));
       }
     } else {
@@ -73,7 +93,7 @@
 
   function tabBtn(id, label, n) {
     return el('button', {
-      class: view.tab === id ? 'on' : '',
+      class: view.tab === id ? 'on' : '', type: 'button',
       onclick: function () { view.tab = id; view.selection = {}; W.app.rerender(); }
     }, [label, el('span', { class: 'count', text: String(n) })]);
   }
@@ -83,10 +103,13 @@
     return view.person === 'all' ? list : list.filter(function (r) { return r.name === view.person; });
   }
 
+  function cardTitle(kind, text) {
+    return el('h3', { style: 'display:flex;align-items:center;gap:8px' }, [I(kind === 'leave' ? 'leave' : 'home'), text]);
+  }
+
   /* ---- pending queue ---- */
   function queue(kind, listRaw) {
     var list = byPerson(listRaw);
-    var title = kind === 'leave' ? '🌴 Leave requests' : '🏠 Work-from-home requests';
     var rows = list.map(function (rec) {
       var key = selKey(kind, rec.id);
       var others = S.clashes(rec).filter(function (o) { return o.rec.status !== 'Pending'; });
@@ -98,7 +121,7 @@
       return el('tr', {}, [
         el('td', { style: 'width:34px' }, [
           el('input', {
-            type: 'checkbox', checked: view.selection[key] || null,
+            type: 'checkbox', checked: view.selection[key] || null, 'aria-label': 'Select ' + rec.name,
             onchange: function (e) { view.selection[key] = e.target.checked; W.app.rerender(); }
           })
         ]),
@@ -117,7 +140,7 @@
         ]),
         el('td', { class: 'num', style: 'font-weight:700', text: U.n1(rec.days) + 'd' }),
         el('td', {}, [
-          el('span', { class: 'pill ' + (isPlanned ? 'ghost' : 'Pending'), text: rec.reason }),
+          el('span', { class: 'pill ' + (isPlanned ? 'ghost' : 'Pending') }, [kind === 'leave' ? I(isPlanned ? 'planned' : 'unplanned') : null, rec.reason]),
           rec.comment ? el('div', { class: 'sub', style: 'font-style:italic;margin-top:3px', text: '“' + rec.comment + '”' }) : null
         ]),
         el('td', {}, [
@@ -125,13 +148,13 @@
             ? el('span', { class: 'sub', text: noticeDays + ' days notice' })
             : el('span', { class: 'pill Declined', text: 'retrospective' }),
           names.length
-            ? el('div', { class: 'sub', style: 'color:var(--warn);font-weight:600;margin-top:3px', text: '👥 ' + names.join(', ') + ' also out' })
-            : el('div', { class: 'sub', style: 'color:var(--ok);margin-top:3px', text: '✓ no clash' })
+            ? el('div', { class: 'sub', style: 'color:var(--warn);font-weight:600;margin-top:3px;display:flex;gap:5px;align-items:center' }, [I('users'), names.join(', ') + ' also out'])
+            : el('div', { class: 'sub', style: 'color:var(--ok);margin-top:3px;display:flex;gap:5px;align-items:center' }, [I('check'), 'no clash'])
         ]),
         el('td', { style: 'text-align:right;white-space:nowrap' }, [
-          el('button', { class: 'btn ok sm', text: 'Approve', onclick: function () { decide(kind, rec, 'Approved'); } }),
+          el('button', { class: 'btn ok sm', type: 'button', text: 'Approve', onclick: function () { decide(kind, rec, 'Approved'); } }),
           ' ',
-          el('button', { class: 'btn bad sm', text: 'Decline', onclick: function () { askDecline(kind, rec); } })
+          el('button', { class: 'btn bad sm', type: 'button', text: 'Decline', onclick: function () { askDecline(kind, rec); } })
         ])
       ]);
     });
@@ -141,7 +164,7 @@
 
     return el('div', { class: 'card' }, [
       el('div', { class: 'card-h' }, [
-        el('h3', { text: title }),
+        cardTitle(kind, kind === 'leave' ? 'Leave requests' : 'Work-from-home requests'),
         el('span', { class: 'count', text: String(list.length) }),
         el('span', { style: 'flex:1' }),
         el('span', { class: 'sub', text: U.n1(U.sum(list, function (r) { return r.days; })) + ' days awaiting decision' })
@@ -150,7 +173,7 @@
         el('table', {}, [
           el('thead', {}, [el('tr', {}, [
             el('th', {}, [el('input', {
-              type: 'checkbox', checked: allOn || null, title: 'Select all',
+              type: 'checkbox', checked: allOn || null, title: 'Select all', 'aria-label': 'Select all',
               onchange: function (e) {
                 allKeys.forEach(function (k) { view.selection[k] = e.target.checked; });
                 W.app.rerender();
@@ -173,7 +196,7 @@
 
     return el('div', { class: 'card' }, [
       el('div', { class: 'card-h' }, [
-        el('h3', { text: kind === 'leave' ? '🌴 Leave history' : '🏠 WFH history' }),
+        cardTitle(kind, kind === 'leave' ? 'Leave history' : 'WFH history'),
         el('span', { style: 'flex:1' }),
         el('span', { class: 'pill Approved', text: approved.length + ' approved' }),
         declined.length ? el('span', { class: 'pill Declined', text: declined.length + ' declined' }) : null
@@ -197,10 +220,14 @@
                 el('span', { class: 'pill ' + rec.status, text: rec.status }),
                 rec.autoLogged ? el('div', { class: 'sub', style: 'margin-top:2px', text: 'logged after the fact' }) : null
               ]),
-              el('td', { style: 'text-align:right' }, [
+              el('td', { style: 'text-align:right;white-space:nowrap' }, [
+                rec.decidedAt ? el('button', {
+                  class: 'btn sm', type: 'button', title: 'Back to the pending queue', onclick: function () { undo([[kind, rec.id]]); }
+                }, [I('undo'), 'Undo']) : null,
+                ' ',
                 el('button', {
-                  class: 'btn sm', text: rec.status === 'Approved' ? 'Revoke' : 'Approve',
-                  onclick: function () { decide(kind, rec, rec.status === 'Approved' ? 'Declined' : 'Approved'); }
+                  class: 'btn sm', type: 'button', text: rec.status === 'Approved' ? 'Revoke' : 'Approve',
+                  onclick: function () { decide(kind, rec, rec.status === 'Approved' ? 'Declined' : 'Approved', null, true); }
                 })
               ])
             ]);
@@ -211,24 +238,43 @@
   }
 
   /* ---- actions ---- */
-  function decide(kind, rec, status, note) {
+  function decide(kind, rec, status, note, noUndo) {
     return S.decide(kind, rec.id, status, note).then(function (res) {
-      if (res) U.toast(rec.name + ' · ' + (kind === 'leave' ? 'Leave' : 'WFH') + ' ' + status.toLowerCase());
+      if (!res) return;
+      var msg = rec.name + ' · ' + (kind === 'leave' ? 'Leave' : 'WFH') + ' ' + status.toLowerCase();
+      if (noUndo) U.toast(msg);
+      else U.toast(msg, { action: 'Undo', onAction: function () { undo([[kind, rec.id]]); } });
     });
   }
 
-  function bulk(status) {
-    var picked = selected();
-    view.selection = {};
-    /* one at a time, so each server response builds on the last */
-    picked.reduce(function (chain, k) {
-      var p = k.split(':');
-      return chain.then(function (ok) {
-        return S.decide(p[0], p[1], status, null).then(function (res) { return ok + (res ? 1 : 0); });
+  function undo(items) {
+    items.reduce(function (chain, it) {
+      return chain.then(function (n) {
+        return S.undoDecision(it[0], it[1]).then(function (res) { return n + (res ? 1 : 0); });
       });
-    }, Promise.resolve(0)).then(function (ok) {
-      U.toast(ok + ' request' + (ok === 1 ? '' : 's') + ' ' + status.toLowerCase());
+    }, Promise.resolve(0)).then(function (n) {
+      if (n) U.toast(n === 1 ? 'Undone — back to pending' : n + ' decisions undone — back to pending');
+    });
+  }
+
+  /* One at a time, so each server response builds on the last. With onlyClashFree,
+     each request is re-checked against the latest state just before approving -
+     two pending requests for the same days never both go through unseen. */
+  function bulk(status, keys, onlyClashFree) {
+    view.selection = {};
+    var done = [], skipped = 0;
+    keys.reduce(function (chain, k) {
+      var p = k.split(':');
+      return chain.then(function () {
+        var rec = (S.state[p[0]] || []).filter(function (r) { return r.id === p[1]; })[0];
+        if (!rec || rec.status !== 'Pending' || (onlyClashFree && !clashFree(rec))) { skipped++; return null; }
+        return S.decide(p[0], p[1], status, null).then(function (res) { if (res) done.push(p); });
+      });
+    }, Promise.resolve()).then(function () {
       W.app.rerender();
+      if (!done.length) { U.toast(skipped ? 'Nothing changed — ' + skipped + ' now clash or were already decided' : 'Nothing changed'); return; }
+      U.toast(done.length + ' request' + (done.length === 1 ? '' : 's') + ' ' + status.toLowerCase() +
+        (skipped ? ' · ' + skipped + ' skipped' : ''), { action: 'Undo', onAction: function () { undo(done); } });
     });
   }
 
@@ -245,9 +291,9 @@
           el('label', { class: 'f' }, ['Note', note])
         ]),
         el('div', { class: 'card-h', style: 'border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end' }, [
-          el('button', { class: 'btn', text: 'Cancel', onclick: close }),
+          el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: close }),
           el('button', {
-            class: 'btn bad', text: 'Decline request', onclick: function () {
+            class: 'btn bad', type: 'button', text: 'Decline request', onclick: function () {
               decide(kind, rec, 'Declined', note.value.trim() || 'Declined by ' + S.me().name);
               close();
             }

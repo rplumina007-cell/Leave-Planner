@@ -3,7 +3,7 @@
    Validation tab - add an option there and it shows up here automatically. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, el = U.el;
+  var U = W.util, S = W.store, el = U.el, I = W.icon;
 
   function select(name, options, value) {
     return el('select', { name: name, required: true }, options.map(function (o) {
@@ -57,30 +57,39 @@
       U.clear(warn);
       U.clear(summary);
 
+      /* public holidays inside the range, which aren't counted */
+      var hols = [];
+      if (d.from && d.to && d.from <= d.to) {
+        for (var x = U.parse(d.from), end = U.parse(d.to), guard = 0; x <= end && guard < 800; x = U.addDays(x, 1), guard++) {
+          var hn = U.holidayName(U.iso(x));
+          if (hn && !U.isWeekend(x)) hols.push(hn);
+        }
+      }
+
       if (!days) {
-        summary.appendChild(el('span', { class: 'err', text: 'That range has no working days (Mon–Fri).' }));
+        summary.appendChild(el('span', { class: 'err', text: 'That range has no working days — weekends and public holidays don’t count.' }));
       } else {
         summary.appendChild(el('span', {}, [
           el('b', { text: U.n1(days) + (days === 1 ? ' working day' : ' working days') }),
-          '  ·  ' + U.fmtRange(d.from, d.to)
+          '  ·  ' + U.fmtRange(d.from, d.to),
+          hols.length ? el('div', { class: 'sub', style: 'margin-top:3px', text: 'Excludes ' + hols.join(', ') + ' (public holiday)' }) : null
         ]));
       }
 
       var mine = S.selfConflict(d);
       if (mine.length) {
-        warn.appendChild(el('div', {
-          class: 'err',
-          text: '⚠ ' + d.name + ' already has ' + mine.length + ' overlapping request (' +
+        warn.appendChild(el('div', { class: 'err', style: 'display:flex;gap:6px;align-items:flex-start' }, [
+          I('alert'),
+          d.name + ' already has ' + mine.length + ' overlapping request (' +
             mine.map(function (m) { return (m.kind === 'leave' ? 'Leave' : 'WFH') + ' ' + U.fmtRange(m.from, m.to); }).join(', ') + ').'
-        }));
+        ]));
       }
       var others = S.clashes(d);
       if (others.length) {
         var names = W.analytics.uniq(others.map(function (o) { return o.rec.name; }));
         warn.appendChild(el('div', {
-          style: 'margin-top:8px;font-size:12px;color:var(--warn);font-weight:600',
-          text: '👥 Overlaps with ' + names.length + ' teammate' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ')
-        }));
+          style: 'margin-top:8px;font-size:12px;color:var(--warn);font-weight:600;display:flex;gap:6px;align-items:flex-start'
+        }, [I('users'), 'Overlaps with ' + names.length + ' teammate' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ')]));
       }
       return days;
     }
@@ -90,10 +99,10 @@
     var overlay = el('div', { class: 'modal' }, [
       el('form', { class: 'box' }, [
         el('div', { class: 'card-h' }, [
-          el('span', { class: 'pill ' + kind, text: kind === 'leave' ? '🌴 Leave' : '🏠 Work from Home' }),
+          el('span', { class: 'pill ' + kind }, [I(kind === 'leave' ? 'leave' : 'home'), kind === 'leave' ? 'Leave' : 'Work from Home']),
           el('h3', { text: 'New request' }),
           el('span', { class: 'spacer', style: 'flex:1' }),
-          el('button', { type: 'button', class: 'iconbtn', text: '✕', onclick: close })
+          el('button', { type: 'button', class: 'iconbtn', title: 'Close', 'aria-label': 'Close', onclick: close }, [I('x')])
         ]),
         el('div', { class: 'card-b', style: 'display:grid;gap:13px' }, [
           el('div', { class: 'f2' }, [

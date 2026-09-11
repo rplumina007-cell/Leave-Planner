@@ -2,7 +2,7 @@
    Sortable, filterable, exportable to CSV. */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el;
+  var U = W.util, S = W.store, TF = W.teamFilter, el = U.el, I = W.icon;
 
   var view = { kind: 'leave', person: 'all', status: 'all', q: '', sort: 'from', dir: -1 };
 
@@ -45,10 +45,10 @@
         el('div', { class: 'tabs' }, [
           el('button', {
             class: view.kind === 'leave' ? 'on' : '', onclick: function () { view.kind = 'leave'; W.app.rerender(); }
-          }, ['🌴 Leave', el('span', { class: 'count', text: String(S.visible('leave').filter(inTeam).length) })]),
+          }, [I('leave'), 'Leave', el('span', { class: 'count', text: String(S.visible('leave').filter(inTeam).length) })]),
           el('button', {
             class: view.kind === 'wfh' ? 'on' : '', onclick: function () { view.kind = 'wfh'; W.app.rerender(); }
-          }, ['🏠 WFH', el('span', { class: 'count', text: String(S.visible('wfh').filter(inTeam).length) })])
+          }, [I('home'), 'WFH', el('span', { class: 'count', text: String(S.visible('wfh').filter(inTeam).length) })])
         ]),
         el('span', { style: 'flex:1' }),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Search', el('input', {
@@ -61,7 +61,7 @@
             .concat(members.map(function (p) { return { v: p.name, t: p.name }; })))]),
         el('label', { class: 'f', style: 'font-size:11px' }, ['Status',
           sel('status', [{ v: 'all', t: 'All' }, { v: 'Approved', t: 'Approved' }, { v: 'Pending', t: 'Pending' }, { v: 'Declined', t: 'Declined' }])]),
-        el('button', { class: 'btn', text: '⬇ CSV', onclick: function () { exportCSV(list, cols); } })
+        el('button', { class: 'btn', type: 'button', onclick: function () { exportCSV(list, cols); } }, [I('download'), 'CSV'])
       ]),
       el('div', { class: 'card' }, [
         el('div', { class: 'card-h' }, [
@@ -97,13 +97,13 @@
                 el('td', { class: 'sub', text: r.comment || '—' }),
                 el('td', { style: 'text-align:right' }, [
                   r.canDelete ? el('button', {
-                    class: 'btn sm', text: '✕', title: 'Delete record',
+                    class: 'btn sm', type: 'button', title: 'Delete record', 'aria-label': 'Delete record for ' + r.name,
                     onclick: function () {
                       if (confirm('Delete this ' + view.kind + ' record for ' + r.name + '?')) {
                         S.withdraw(view.kind, r.id).then(function (res) { if (res) U.toast('Record deleted'); });
                       }
                     }
-                  }) : null
+                  }, [I('x')]) : null
                 ])
               ]);
             }))

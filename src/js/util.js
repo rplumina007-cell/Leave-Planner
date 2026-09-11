@@ -19,6 +19,15 @@ window.WFS = window.WFS || {};
   function pad(n) { return (n < 10 ? '0' : '') + n; }
   function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
   function isWeekend(d) { var g = d.getDay(); return g === 0 || g === 6; }
+
+  /* Public holidays, installed by the store from the server's list: {date -> name}. */
+  var HOLIDAYS = {};
+  function setHolidays(list) {
+    HOLIDAYS = {};
+    (list || []).forEach(function (h) { HOLIDAYS[h.date] = h.name; });
+  }
+  function holidayName(isoStr) { return HOLIDAYS[String(isoStr).slice(0, 10)] || null; }
+  function isWorkingDay(d) { return !isWeekend(d) && !HOLIDAYS[iso(d)]; }
   function monthKey(isoStr) { return String(isoStr).slice(0, 7); }
   function monthLabel(key) {
     var p = key.split('-');
@@ -38,20 +47,20 @@ window.WFS = window.WFS || {};
   }
   function todayISO() { return iso(new Date()); }
 
-  /* Working days (Mon-Fri) between two ISO dates, inclusive. */
+  /* Working days (Mon-Fri, not public holidays) between two ISO dates, inclusive. */
   function workingDaysBetween(fromISO, toISO) {
     var out = [], d = parse(fromISO), end = parse(toISO), guard = 0;
     while (d <= end && guard++ < 800) {
-      if (!isWeekend(d)) out.push(iso(d));
+      if (isWorkingDay(d)) out.push(iso(d));
       d = addDays(d, 1);
     }
     return out;
   }
-  /* Count of Mon-Fri days in a calendar month key 'YYYY-MM'. */
+  /* Count of working days in a calendar month key 'YYYY-MM'. */
   function workingDaysInMonth(key) {
     var p = key.split('-'), y = +p[0], m = +p[1] - 1;
     var d = new Date(y, m, 1), n = 0;
-    while (d.getMonth() === m) { if (!isWeekend(d)) n++; d = addDays(d, 1); }
+    while (d.getMonth() === m) { if (isWorkingDay(d)) n++; d = addDays(d, 1); }
     return n;
   }
 
@@ -108,10 +117,22 @@ window.WFS = window.WFS || {};
     }, [initials(name)]);
   }
 
-  function toast(msg) {
-    var t = el('div', { class: 'toast', text: msg });
+  /* A short message. With opts.action (e.g. 'Undo') and opts.onAction it carries a
+     button and stays up longer. A new toast replaces the one on screen. */
+  var shown = null;
+  function toast(msg, opts) {
+    opts = opts || {};
+    if (shown) shown.remove();
+    var t = el('div', { class: 'toast', role: 'status' }, [el('span', { text: msg })]);
+    if (opts.action) {
+      t.appendChild(el('button', {
+        type: 'button', class: 'toast-action', text: opts.action,
+        onclick: function () { t.remove(); opts.onAction(); }
+      }));
+    }
     document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, 2200);
+    shown = t;
+    setTimeout(function () { t.remove(); if (shown === t) shown = null; }, opts.ms || (opts.action ? 7000 : 2600));
   }
 
   /* ---- grouping ---- */
@@ -129,6 +150,7 @@ window.WFS = window.WFS || {};
     parse: parse, iso: iso, pad: pad, addDays: addDays, isWeekend: isWeekend,
     monthKey: monthKey, monthLabel: monthLabel, fmt: fmt, fmtRange: fmtRange, todayISO: todayISO,
     workingDaysBetween: workingDaysBetween, workingDaysInMonth: workingDaysInMonth,
+    setHolidays: setHolidays, holidayName: holidayName, isWorkingDay: isWorkingDay,
     n1: n1, pct: pct, initials: initials, colorFor: colorFor,
     el: el, esc: esc, clear: clear, avatar: avatar, toast: toast,
     groupBy: groupBy, sum: sum

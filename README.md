@@ -170,10 +170,16 @@ Either way, serve it over HTTPS (`--cert/--key`) before anyone else signs in.
 
 | Page | What it does |
 | --- | --- |
-| **Calendar** | Month of raised day tiles marking every day someone is on leave or WFH. Chips carry three colours — **planned leave** ochre 🌴, **unplanned leave** wine 🌴, **WFH** teal 🏠 — so planned-ness is readable without opening a day, and the leaf/house icon keeps Leave vs WFH distinct regardless. The stripe across the top of each tile splits the same three ways. Never merged into one "out" state. A dashed left border means still awaiting approval; `½AM` / `½PM` marks half days. Filter by member, type and status; click a day for the full roster. |
-| **Approvals** | The manager queue. Split first into **Pending approval** vs **Approved & declined**, and within each into separate **Leave** and **WFH** cards. Shows days of notice and flags teammates already off on the same dates. Approve/decline singly or in bulk; declining prompts for a note. |
-| **Dashboards** | Three tabs on one page — **Leave**, **WFH** and **Combined**. All share a single filter window (date range, team, person, whether pending counts), so changing the scope carries across all three and they stay comparable. Each has its own KPI row. Combined carries off-site pressure, per-person and monthly leave-plus-WFH totals, the three-way time split, the leave-vs-WFH rate trend, and coverage risk. |
+| **Calendar** | Month of raised day tiles marking every day someone is on leave or WFH. Chips carry a colour **and** a shape, so they read without colour vision — **planned leave** ochre (calendar tick), **unplanned leave** wine (alert), **WFH** teal (house); a colleague's leave with details hidden shows a sun. The stripe across the top of each tile splits the same way. **Public holidays** are shaded and named. A dashed border means still awaiting approval; `½AM` / `½PM` marks half days. Filter by team, member, type and status; click a day for the full roster, or **drag across days** to apply for that range. **My requests** lists your pending and upcoming requests, with **Withdraw** on pending ones. On a phone the month becomes a day-by-day list with a pinned Apply bar. |
+| **Approvals** | The manager queue. Split first into **Pending approval** vs **Approved & declined**, and within each into separate **Leave** and **WFH** cards. Shows days of notice and flags teammates already off on the same dates. Decisions apply at once with **Undo** in the confirmation (history rows have Undo too); declining prompts for a note. **Approve N without clashes** approves every visible request that doesn't overlap anyone already approved off, re-checking each one just before approving. |
+| **Dashboards** | One-click ranges (**This month / This quarter / Year to date / All time**) or pick months. Three tabs on one page — **Leave**, **WFH** and **Combined**. All share a single filter window (date range, team, person, whether pending counts), so changing the scope carries across all three and they stay comparable. Each has its own KPI row. Combined carries off-site pressure, per-person and monthly leave-plus-WFH totals, the three-way time split, the leave-vs-WFH rate trend, and coverage risk. |
 | **Register** | The searchable, sortable equivalent of the sheet's Leave and WFH tabs, with CSV export. |
+
+Everyone also gets a **profile menu** (your name, top right) for changing password,
+choosing the theme (**System / Light / Dark**) and signing out, and a short
+**What's changed** note after signing in when one of your requests was approved or
+declined since your last visit (remembered per browser). The sign-in page has a
+show-password toggle and a Caps Lock warning.
 
 ## The four leave categories
 
@@ -264,14 +270,20 @@ Two normalisations happen on import, both deliberate:
 
 Changes are saved in the server's database, not back to the sheet.
 
-## Settings (⚙, admins only)
+## Settings (admins only)
 
-Four tabs:
+A full page, opened from the profile menu, with six sections:
 
-- **Users** — create logins (employee ID, full name, password, role, manager),
-  change roles and manager assignments, deactivate, reset passwords, delete.
-  People who appear in the records but have no login are listed as one-click
-  prefills. Deleting a login keeps that person's leave and WFH history.
+- **Users** — create logins (employee ID, full name, password, role, manager,
+  teams), change roles and manager assignments, deactivate, reset passwords,
+  delete. Search by name or ID, filter by team, and tick several people to add
+  them to — or remove them from — a team in one go. People who appear in the
+  records but have no login are listed as one-click prefills. Deleting a login
+  keeps that person's leave and WFH history.
+- **Teams** — create and remove teams; **All Teams** is built in.
+- **Public holidays** — add or remove dated, named holidays. They're shaded on
+  the calendar and don't count as working days in new requests, day counts and
+  dashboard figures; requests already recorded keep their day counts.
 - **Data** — load the latest sheet import, export a JSON backup, and the audit log
   (who did what).
 - **Dropdowns** — add or remove values for **leave reasons**, **WFH reasons** and

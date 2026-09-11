@@ -148,8 +148,8 @@ def decide_request(app, body, ctx):
     user = ctx["user"]
     need(user, "manager", "admin")
     status = body.get("status")
-    if status not in ("Approved", "Declined"):
-        raise ApiError(400, "Status must be Approved or Declined")
+    if status not in ("Approved", "Declined", "Pending"):
+        raise ApiError(400, "Status must be Approved, Declined, or Pending to undo a decision")
     users = app.db.users()
 
     def fn(st):
@@ -158,9 +158,20 @@ def decide_request(app, body, ctx):
             raise ApiError(404, "Request not found")     # don't reveal whose it is
         if not domain.can_decide(user, rec, users):
             raise ApiError(403, "Only %s's manager or an admin can decide this request" % rec["name"])
+        if status == "Pending":                           # undo: back to the queue, as it was
+            if rec.get("status") == "Pending":
+                raise ApiError(400, "That request is already pending")
+            rec["status"] = "Pending"
+            rec.pop("decidedBy", None)
+            rec.pop("decidedAt", None)
+            if "requestComment" in rec:
+                rec["comment"] = rec.pop("requestComment")
+            domain.log(st, "decision undone", body["kind"], rec["id"], rec["name"], user["name"])
+            return
         rec.update(status=status, decidedBy=user["name"], decidedAt=domain.now_iso())
         note = str(body.get("note") or "").strip()[:500]
         if note:
+            rec.setdefault("requestComment", rec.get("comment", ""))   # so an undo can restore it
             rec["comment"] = note
         domain.log(st, status.lower(), body["kind"], rec["id"], rec["name"], user["name"])
     app.db.mutate(fn)
@@ -310,6 +321,28 @@ def delete_user(app, body, ctx):
     return {"state": state_payload(app, admin)}, []
 
 
+# ------------------------------------------------------------------ public holidays (admin)
+def holiday_add(app, body, ctx):
+    need(ctx["user"], "admin")
+
+    def fn(st):
+        day = domain.add_holiday(st, body.get("date"), body.get("name"))
+        domain.log(st, "holiday added", "holidays", day, " ".join(str(body.get("name") or "").split())[:60], ctx["user"]["name"])
+    app.db.mutate(fn)
+    return {"state": state_payload(app, ctx["user"])}, []
+
+
+def holiday_remove(app, body, ctx):
+    need(ctx["user"], "admin")
+    date = str(body.get("date") or "")
+
+    def fn(st):
+        domain.remove_holiday(st, date)
+        domain.log(st, "holiday removed", "holidays", date, "", ctx["user"]["name"])
+    app.db.mutate(fn)
+    return {"state": state_payload(app, ctx["user"])}, []
+
+
 # ------------------------------------------------------------------ teams (admin)
 def team_add(app, body, ctx):
     need(ctx["user"], "admin")
@@ -406,6 +439,8 @@ ROUTES = {
     ("POST", "/api/users/update"): update_user,
     ("POST", "/api/users/reset-password"): reset_password,
     ("POST", "/api/users/delete"): delete_user,
+    ("POST", "/api/holidays/add"): holiday_add,
+    ("POST", "/api/holidays/remove"): holiday_remove,
     ("POST", "/api/teams/add"): team_add,
     ("POST", "/api/teams/remove"): team_remove,
     ("POST", "/api/options/add"): option_add,

@@ -3,19 +3,20 @@
    What each role can open is decided by ACCESS below for the UI, and enforced
    again by the server for the data - hiding a page here is convenience, not
    security. To add a page, register it in src/js/pages/ and add its id to
-   the roles that should see it. */
+   the roles that should see it. A page with nav:false is reachable but not
+   listed in the top bar (Settings lives in the profile menu). */
 (function (W) {
   'use strict';
-  var U = W.util, S = W.store, el = U.el;
+  var U = W.util, S = W.store, el = U.el, I = W.icon;
 
   /* Stamped by tools/build-single-file.py; 'dev' when served from source. */
   var BUILD = 'dev';
 
-  var ORDER = ['calendar', 'approvals', 'insights', 'records'];
+  var ORDER = ['calendar', 'approvals', 'insights', 'records', 'settings'];
   var ACCESS = {
     employee: ['calendar'],
     manager: ['calendar', 'approvals', 'insights', 'records'],
-    admin: ['calendar', 'approvals', 'insights', 'records']
+    admin: ['calendar', 'approvals', 'insights', 'records', 'settings']
   };
   var ROLE_LABEL = { employee: 'Employee', manager: 'Manager', admin: 'Admin' };
 
@@ -42,6 +43,8 @@
     if (location.hash !== '#/' + page.id) history.replaceState(null, '', '#/' + page.id);
     root.appendChild(topbar(page));
     if (S.is('admin') && S.seedIsNewer()) root.appendChild(syncBanner());
+    var news = changesNotice();
+    if (news) root.appendChild(news);
     var body = el('main', {});
     try {
       body.appendChild(page.render(body));
@@ -57,53 +60,105 @@
     root.appendChild(body);
   }
 
-  function themeButton() {
-    return el('button', {
-      class: 'iconbtn', title: 'Toggle light / dark', text: '◐', onclick: function () {
-        var cur = document.documentElement.getAttribute('data-theme');
-        var next = cur === 'dark' ? 'light' : cur === 'light' ? '' : 'dark';
-        if (next) document.documentElement.setAttribute('data-theme', next);
-        else document.documentElement.removeAttribute('data-theme');
-        try { localStorage.setItem('wfs-theme', next); } catch (e) { }
-      }
-    });
+  /* ---- theme: an explicit choice of System / Light / Dark ---- */
+  function themeMode() { return document.documentElement.getAttribute('data-theme') || ''; }
+  function setTheme(mode) {
+    if (mode) document.documentElement.setAttribute('data-theme', mode);
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('wfs-theme', mode); } catch (e) { }
   }
 
-  function identity(user) {
-    return el('div', { class: 'who' }, [
+  function roleLine(user) {
+    return (ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId +
+      (user.teams && user.teams.length ? ' · ' + user.teams.join(', ') : '');
+  }
+
+  /* ---- profile menu: one place for password, settings, theme and sign-out ---- */
+  function profileMenu(user, minimal) {
+    var wrap = el('div', { class: 'menu-wrap' });
+    var panel = null;
+    var btn = el('button', {
+      class: 'who-btn', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false', title: 'Account and settings'
+    }, [
       U.avatar(user.name),
-      el('div', { style: 'line-height:1.25' }, [
+      el('div', { class: 'who-text', style: 'line-height:1.25' }, [
         el('div', { style: 'font-weight:700;font-size:13px', text: user.name }),
-        el('div', { class: 'sub', style: 'font-size:11px', text: (ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId +
-          (user.teams && user.teams.length ? ' · ' + user.teams.join(', ') : '') })
-      ])
+        el('div', { class: 'sub', style: 'font-size:11px', text: roleLine(user) })
+      ]),
+      I('chevD')
     ]);
+
+    function outside(e) { if (!wrap.contains(e.target)) close(); }
+    function onKey(e) { if (e.key === 'Escape') { close(); btn.focus(); } }
+    function close() {
+      if (!panel) return;
+      panel.remove();
+      panel = null;
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('mousedown', outside);
+      document.removeEventListener('keydown', onKey);
+    }
+    function item(icon, label, fn) {
+      return el('button', { class: 'mi', type: 'button', role: 'menuitem', onclick: function () { close(); fn(); } }, [I(icon), label]);
+    }
+    function themeChoice() {
+      var cur = themeMode();
+      return el('div', { class: 'seg', role: 'group', 'aria-label': 'Theme' }, [['', 'System'], ['light', 'Light'], ['dark', 'Dark']].map(function (t) {
+        return el('button', {
+          type: 'button', class: cur === t[0] ? 'on' : '', 'aria-pressed': cur === t[0] ? 'true' : 'false',
+          onclick: function () { setTheme(t[0]); close(); }
+        }, [t[1]]);
+      }));
+    }
+
+    btn.addEventListener('click', function () {
+      if (panel) { close(); return; }
+      panel = el('div', { class: 'menu', role: 'menu' }, [
+        el('div', { style: 'padding:8px 10px 6px' }, [
+          el('div', { style: 'font-weight:700;font-size:13px', text: user.name }),
+          el('div', { class: 'sub', style: 'font-size:11.5px', text: roleLine(user) })
+        ]),
+        el('div', { class: 'sep' }),
+        minimal ? null : item('key', 'Change password', passwordDialog),
+        !minimal && S.is('admin') ? item('settings', 'Settings', function () { location.hash = '#/settings'; }) : null,
+        minimal ? null : el('div', { class: 'sep' }),
+        el('div', { class: 'mlabel', text: 'Theme' }),
+        themeChoice(),
+        el('div', { class: 'sep' }),
+        item('logout', 'Sign out', function () { S.logout(); })
+      ]);
+      wrap.appendChild(panel);
+      btn.setAttribute('aria-expanded', 'true');
+      setTimeout(function () {
+        document.addEventListener('mousedown', outside);
+        document.addEventListener('keydown', onKey);
+      }, 0);
+      var first = panel.querySelector('.mi');
+      if (first) first.focus();
+    });
+    wrap.appendChild(btn);
+    return wrap;
+  }
+
+  function brand() {
+    return el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'L' }), el('span', { text: 'Leave Planner' })]);
   }
 
   function topbar(page) {
-    var me = S.me();
-    var nav = el('nav', { class: 'nav' }, pages().map(function (p) {
+    var nav = el('nav', { class: 'nav' }, pages().filter(function (p) { return p.nav !== false; }).map(function (p) {
       var n = p.badge ? p.badge() : 0;
       return el('a', {
-        href: '#/' + p.id, class: p.id === page.id ? 'on' : ''
+        href: '#/' + p.id, class: p.id === page.id ? 'on' : '', 'aria-current': p.id === page.id ? 'page' : null
       }, [p.label, n ? el('span', { class: 'count', style: 'margin-left:6px', text: String(n) }) : null]);
     }));
 
     return el('header', { class: 'topbar' }, [
-      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'L' }), el('span', { text: 'Leave Planner' })]),
-      nav,
-      el('span', { class: 'spacer' }),
-      identity(me),
-      el('button', { class: 'iconbtn', title: 'Change password', text: '🔑', onclick: function () { passwordDialog(); } }),
-      S.is('admin') ? el('button', { class: 'iconbtn', title: 'Settings', text: '⚙', onclick: function () { W.settings.open(); } }) : null,
-      themeButton(),
-      el('button', { class: 'btn sm', title: 'Sign out', text: 'Sign out', onclick: function () { S.logout(); } })
+      brand(), nav, el('span', { class: 'spacer' }), profileMenu(S.me())
     ]);
   }
 
   /* Shown to admins when data/seed.json holds a newer sheet import than the server has loaded. */
   function syncBanner() {
-    var when = S.seedInfo().generatedAt;
     return el('div', { class: 'card', style: 'margin-bottom:18px;border-left:4px solid var(--accent)' }, [
       el('div', { class: 'card-h', style: 'border-bottom:0' }, [
         el('div', { style: 'flex:1;min-width:220px' }, [
@@ -114,7 +169,7 @@
               'approvals made here, and Settings changes.'
           })
         ]),
-        el('button', { class: 'btn primary', text: '⟳ Load sheet data', onclick: runSync })
+        el('button', { class: 'btn primary', type: 'button', onclick: runSync }, [I('refresh'), 'Load sheet data'])
       ])
     ]);
   }
@@ -128,7 +183,47 @@
     });
   }
 
-  /* ---- password: optional from the key button, mandatory at first sign-in ---- */
+  /* ---- "What's changed": decisions on your own requests since you last looked.
+     Remembered per browser; the very first visit just starts the clock. ---- */
+  function changesNotice() {
+    var me = S.me(), key = 'lp-seen-' + me.empId, seen;
+    try { seen = localStorage.getItem(key); } catch (e) { return null; }
+    if (!seen) {
+      try { localStorage.setItem(key, new Date().toISOString()); } catch (e) { }
+      return null;
+    }
+    var since = Date.parse(seen);
+    var news = S.myRequests().filter(function (r) {
+      return r.status !== 'Pending' && r.decidedAt && Date.parse(r.decidedAt) > since;
+    }).sort(function (a, b) { return Date.parse(b.decidedAt) - Date.parse(a.decidedAt); });
+    if (!news.length) return null;
+
+    function dismiss() {
+      try { localStorage.setItem(key, new Date().toISOString()); } catch (e) { }
+      rerender();
+    }
+    return el('div', { class: 'card notice', role: 'status' }, [
+      el('div', { class: 'card-h', style: 'border-bottom:0;align-items:flex-start' }, [
+        el('div', { style: 'flex:1;min-width:220px;display:grid;gap:4px' }, [
+          el('h3', { text: 'What’s changed since your last visit' })
+        ].concat(news.slice(0, 4).map(function (r) {
+          var ok = r.status === 'Approved';
+          return el('div', { class: 'nl' }, [
+            el('span', { style: 'color:' + (ok ? 'var(--ok)' : 'var(--bad)') }, [I(ok ? 'check' : 'x')]),
+            el('span', {}, [
+              'Your ' + (r.kind === 'wfh' ? 'WFH' : 'leave') + ' for ',
+              el('b', { text: U.fmtRange(r.from, r.to) }),
+              ' was ' + r.status.toLowerCase() + (r.decidedBy ? ' by ' + r.decidedBy : '') + '.',
+              !ok && r.comment ? el('span', { class: 'sub', text: ' “' + r.comment + '”' }) : null
+            ])
+          ]);
+        })).concat(news.length > 4 ? [el('div', { class: 'sub', text: '+' + (news.length - 4) + ' more — see My requests on the Calendar' })] : [])),
+        el('button', { class: 'btn sm', type: 'button', onclick: dismiss }, ['Got it'])
+      ])
+    ]);
+  }
+
+  /* ---- password: optional from the profile menu, mandatory at first sign-in ---- */
   function passwordForm(forced, onDone) {
     var cur = el('input', { type: 'password', autocomplete: 'current-password' });
     var next = el('input', { type: 'password', autocomplete: 'new-password' });
@@ -170,7 +265,7 @@
     overlay.appendChild(el('div', { class: 'box' }, [
       el('div', { class: 'card-h' }, [
         el('h3', { text: 'Change password' }), el('span', { style: 'flex:1' }),
-        el('button', { class: 'iconbtn', text: '✕', title: 'Close', onclick: close })
+        el('button', { class: 'iconbtn', type: 'button', title: 'Close', 'aria-label': 'Close', onclick: close }, [I('x')])
       ]),
       el('div', { class: 'card-b' }, [passwordForm(false, close)])
     ]));
@@ -181,13 +276,7 @@
   function forcedPasswordScreen(user) {
     var root = document.getElementById('root');
     U.clear(root);
-    root.appendChild(el('header', { class: 'topbar' }, [
-      el('div', { class: 'brand' }, [el('span', { class: 'dot', text: 'L' }), el('span', { text: 'Leave Planner' })]),
-      el('span', { class: 'spacer' }),
-      identity(user),
-      themeButton(),
-      el('button', { class: 'btn sm', text: 'Sign out', onclick: function () { S.logout(); } })
-    ]));
+    root.appendChild(el('header', { class: 'topbar' }, [brand(), el('span', { class: 'spacer' }), profileMenu(user, true)]));
     root.appendChild(el('main', { style: 'display:grid;place-items:center;padding:30px 0' }, [
       el('div', { class: 'card', style: 'width:min(460px,100%)' }, [
         el('div', { class: 'card-h' }, [el('div', {}, [
