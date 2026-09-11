@@ -178,6 +178,7 @@
     ]);
   }
 
+  /* value and detail are HTML (for the <small> units) - pass recorded text through U.esc. */
   function kpi(label, value, detail, extra) {
     return el('div', { class: 'kpi' }, [
       el('div', { class: 'k', text: label }),
@@ -306,8 +307,8 @@
         d.wfhUsers.length + ' of ' + d.names.length + ' people worked remotely', C.meter(d.wfhAdoption, 100, 'var(--wfh)')),
       kpi('Remote rate', d.wfhRate + '<small>%</small>', 'of all available working time', C.meter(d.wfhRate, 20, 'var(--wfh)')),
       kpi('Avg per person', U.n1(perPersonAvg) + ' <small>d</small>', 'across the whole team'),
-      kpi('Top reason', top ? top.label : '—', top ? U.n1(top.days) + ' d · ' + U.pct(top.days, d.wfhDays) + '% of WFH' : 'no data'),
-      kpi('Busiest month', peak && peak.wfhDays ? peak.label : '—', peak && peak.wfhDays ? U.n1(peak.wfhDays) + ' WFH days' : 'no data')
+      kpi('Top reason', top ? U.esc(top.label) : '—', top ? U.n1(top.days) + ' d · ' + U.pct(top.days, d.wfhDays) + '% of WFH' : 'no data'),
+      kpi('Busiest month', peak && peak.wfhDays ? U.esc(peak.label) : '—', peak && peak.wfhDays ? U.n1(peak.wfhDays) + ' WFH days' : 'no data')
     ]);
 
     var rows = d.byPerson.slice().sort(function (a, z) { return z.wfhDays - a.wfhDays; })

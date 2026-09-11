@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app as runner  # noqa: E402
 import db as dbm      # noqa: E402
 import domain         # noqa: E402
+import security       # noqa: E402
 import wsgi           # noqa: E402
 
 PASS, FAIL = [], []
@@ -169,6 +170,10 @@ def main():
     check("duplicate employee ID refused", mk("E1", "Someone Else", "employee")[0] == 409)
     check("employee can't be assigned as a manager", mk("E3", "Ezra Employee", "employee", "E1")[0] == 400)
     check("create needs a valid password", admin.req("POST", "/api/users", {"empId": "E4", "name": "Emma Employee", "role": "employee", "password": "123"})[0] == 400)
+    for weak, why in (("Plan-7x92", "under 10 characters"), ("Password2026!", "a common password"),
+                      ("Welcome@12345", "a common password"), ("1234567890", "a run of digits")):
+        check("password refused: " + why, admin.req("POST", "/api/users", {
+            "empId": "E7", "name": "Ivy Wren", "role": "employee", "password": weak})[0] == 400)
     _, ast = admin.req("GET", "/api/state")
     check("admin sees the team list", ast.get("teams") == ["Alpha", "Beta", "Gamma"], ast.get("teams"))
     check("All Teams is stored on its own", [u["teams"] for u in ast["team"] if u["empId"] == "G1"] == [["All Teams"]])
@@ -310,10 +315,16 @@ def main():
         raw = open(db_path, "rb").read()
         check("no plaintext passwords in the database", not any(p in raw for p in (b"Blue-Harbor-71", b"Harbor-Lamp-11", b"Start-Here-2026")))
     check("passwords stored as scrypt hashes", all(u["pw_hash"].startswith("scrypt$") for u in db.users(include_hash=True).values()))
+    legacy = security.hash_password("Maple-Stone-55", n=2 ** 14, r=8, p=1)      # the settings used before
+    with db.tx() as c:
+        c.execute("UPDATE users SET pw_hash = ? WHERE emp_id = ?", (legacy, "E5"))
+    check("an older, weaker hash still signs in", Client(port).login("E5", "Maple-Stone-55")[0] == 200)
+    check("...and is upgraded to today's settings at that sign-in",
+          db.user("E5", include_hash=True)["pw_hash"].startswith("scrypt$%d$%d$%d$" % (security.N, security.R, security.P)))
     atk = Client(port)
     for _ in range(5):
         atk.login("M1", "guess-guess")
-    check("6th attempt locked out even with right password", atk.login("M1", "Silver-Pine-33")[0] == 429)
+    check("6th attempt from the same address locked out, even with the right password", atk.login("M1", "Silver-Pine-33")[0] == 429)
 
     print()
     print("-- hosted mode (behind a proxy, several instances sharing one database)")
@@ -328,6 +339,17 @@ def main():
         one.req("POST", "/api/login", {"empId": "M2", "password": "guess-guess"}, far)
     s, _ = two.req("POST", "/api/login", {"empId": "M2", "password": "Amber-Rail-44"}, far)
     check("lockout shared across server instances", s == 429, s)
+    s, _ = two.req("POST", "/api/login", {"empId": "M2", "password": "Amber-Rail-44"}, {"X-Forwarded-For": "198.51.100.23"})
+    check("someone else's wrong guesses don't lock the real user out on their own device", s == 200, s)
+    spray = {"X-Forwarded-For": "192.0.2.50"}
+    for i in range(20):
+        one.req("POST", "/api/login", {"empId": "NOBODY%d" % i, "password": "guess-guess"}, spray)
+    s, _ = one.req("POST", "/api/login", {"empId": "A1", "password": "Blue-Harbor-71"}, spray)
+    check("one address trying many IDs is locked out (20)", s == 429, s)
+    for i in range(50):
+        one.req("POST", "/api/login", {"empId": "G1", "password": "guess-guess"}, {"X-Forwarded-For": "10.1.0.%d" % i})
+    s, _ = one.req("POST", "/api/login", {"empId": "G1", "password": "Cedar-Wind-66"}, {"X-Forwarded-For": "10.2.0.1"})
+    check("one ID attacked from many addresses is locked out (50)", s == 429, s)
     s, _, h = one.req("POST", "/api/login", {"empId": "A1", "password": "Blue-Harbor-71"},
                       {"X-Forwarded-For": "198.51.100.4", "X-Forwarded-Proto": "https"}, raw=True)
     check("session cookie marked Secure behind HTTPS proxy", s == 200 and "Secure" in h.get("Set-Cookie", ""), (s, h.get("Set-Cookie")))

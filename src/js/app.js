@@ -140,7 +140,7 @@
       el('label', { class: 'f' }, [forced ? 'One-time password' : 'Current password', cur]),
       el('label', { class: 'f' }, ['New password', next]),
       el('label', { class: 'f' }, ['Confirm new password', again]),
-      el('div', { class: 'sub', style: 'font-size:12px', text: 'At least 8 characters, not containing your name or employee ID.' }),
+      el('div', { class: 'sub', style: 'font-size:12px', text: 'At least 10 characters, not a common password, and not containing your name or employee ID.' }),
       err,
       el('div', { class: 'row', style: 'justify-content:flex-end' }, [go])
     ]);
@@ -150,7 +150,7 @@
       function fail(msg) { err.appendChild(el('div', { class: 'err', text: msg })); }
       if (!cur.value || !next.value) return fail('Fill in all three fields.');
       if (next.value !== again.value) return fail('The new passwords don\'t match.');
-      if (next.value.length < 8) return fail('New password must be at least 8 characters.');
+      if (next.value.length < 10) return fail('New password must be at least 10 characters.');
       go.disabled = true;
       S.changePassword(cur.value, next.value).then(function () {
         U.toast('Password changed');

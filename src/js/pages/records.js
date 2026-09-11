@@ -113,12 +113,19 @@
     ]);
   }
 
+  /* One CSV cell. Text a spreadsheet would run as a formula (starting with = + - @
+     or a tab/return) gets a leading apostrophe, so a comment such as
+     "=HYPERLINK(...)" opens as plain text instead of executing. */
+  function csvCell(v) {
+    var s = String(v === undefined || v === null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
   function exportCSV(list, cols) {
-    var head = cols.map(function (c) { return c.t; }).join(',');
+    var head = cols.map(function (c) { return csvCell(c.t); }).join(',');
     var body = list.map(function (r) {
-      return cols.map(function (c) {
-        return '"' + String(r[c.k] === undefined || r[c.k] === null ? '' : r[c.k]).replace(/"/g, '""') + '"';
-      }).join(',');
+      return cols.map(function (c) { return csvCell(r[c.k]); }).join(',');
     }).join('\n');
     var blob = new Blob([head + '\n' + body], { type: 'text/csv;charset=utf-8' });
     var a = document.createElement('a');

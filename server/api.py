@@ -68,15 +68,18 @@ def state_payload(app, user):
 # ------------------------------------------------------------------ handlers
 def login(app, body, ctx):
     emp = str(body.get("empId", "")).strip()
-    keys = ("ip:" + ctx["ip"], "id:" + emp.lower())
+    keys = security.LoginLimiter.login_keys(emp, ctx["ip"])
     if app.limiter.blocked(*keys):
         raise ApiError(429, "Too many failed attempts. Try again in 15 minutes.")
+    password = str(body.get("password", ""))
     u = app.db.user(emp, include_hash=True) if emp else None
-    ok = security.verify_or_dummy(str(body.get("password", "")), u["pw_hash"] if u else None)
+    ok = security.verify_or_dummy(password, u["pw_hash"] if u else None)
     if not (ok and u and u["active"]):
         app.limiter.fail(*keys)
         raise ApiError(401, "Invalid employee ID or password")
-    app.limiter.clear(keys[1])
+    app.limiter.clear(keys[0], keys[2])          # this ID's counts; the address's own count stands
+    if security.needs_rehash(u["pw_hash"]):
+        app.db.update_user(u["emp_id"], password=password)     # upgrade an older hash to today's settings
     token = app.db.create_session(u["emp_id"])
     return {"user": public_user(u)}, [("Set-Cookie", app.cookie(token, ctx))]
 

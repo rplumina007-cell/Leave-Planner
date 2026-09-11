@@ -72,10 +72,16 @@ managers assigned to them, and so on) who are also in one of their teams. Every
 rule is enforced by the server (`server/api.py`), not just hidden in the page.
 
 **Security**
-- Passwords are stored as scrypt hashes; sessions are random tokens stored hashed,
-  in an HttpOnly, SameSite=Strict cookie that expires after 12 hours.
-- 5 failed sign-ins lock that employee ID and address for 15 minutes; a wrong ID
-  and a wrong password give the same message.
+- Passwords are stored as scrypt hashes (N=2^16, r=8, p=2); older, weaker hashes
+  are upgraded automatically at the next sign-in. Sessions are random tokens
+  stored hashed, in an HttpOnly, SameSite=Strict cookie that expires after 12 hours.
+- Passwords need at least 10 characters, can't contain the person's name or
+  employee ID, and common ones ("Password2026!", "Welcome@123") are refused.
+- Failed sign-ins are counted over 15 minutes: 5 for one ID from one address,
+  20 from one address across any IDs, 50 for one ID from any addresses. Someone
+  who knows a colleague's ID can't lock them out from their own device. A wrong
+  ID and a wrong password give the same message.
+- Register CSV exports neutralise cells a spreadsheet would run as formulas.
 - Changing or resetting a password, deactivating someone, or changing their role
   signs them out everywhere. There is always at least one active admin.
 - Only the sign-in page and the app's scripts are served — never `data/`,
