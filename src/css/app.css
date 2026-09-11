@@ -13,6 +13,7 @@
 
 :root{
   /* --- warm paper neutrals --- */
+  color-scheme:light;              /* native controls (dropdown lists, date pickers) follow the theme */
   --bg:#f7f4ef;
   --surface:rgba(255,253,249,.92);
   --surface-solid:#fffdf9;
@@ -82,7 +83,7 @@
 
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --bg:#15110d;
+    color-scheme:dark; --bg:#15110d;
     --surface:rgba(38,31,25,.90);
     --surface-solid:#241e18;
     --surface-2:rgba(56,46,37,.78);
@@ -115,7 +116,7 @@
   }
 }
 :root[data-theme="dark"]{
-  --bg:#15110d;
+  color-scheme:dark; --bg:#15110d;
   --surface:rgba(38,31,25,.90);
   --surface-solid:#241e18;
   --surface-2:rgba(56,46,37,.78);
@@ -166,6 +167,16 @@ body::after{
 
 h1,h2,h3,h4{margin:0;font-family:var(--display);font-weight:700;letter-spacing:-.024em}
 button,input,select,textarea{font:inherit;font-family:var(--ui);color:inherit}
+/* Every form control gets the app's surface, ink and border, so none falls back
+   to the browser's white box with inherited (light, in dark mode) text. :where()
+   keeps this at zero specificity - any component rule below still wins. */
+:where(select, textarea, input:not([type=checkbox], [type=radio], [type=range], [type=color])){
+  background-color:var(--surface-2);color:var(--text);border:1px solid var(--line);border-radius:var(--r-xs)}
+:where(select){padding:6px 9px;font-size:13px;font-weight:500;cursor:pointer;max-width:100%}
+:where(select, textarea, input):focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+select option,select optgroup{background-color:var(--surface-solid);color:var(--text)}
+select:disabled{opacity:.6;cursor:not-allowed}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent)}
 a{color:var(--accent)}
 .num,.mono{font-family:var(--ui);font-variant-numeric:tabular-nums;font-weight:600;letter-spacing:-.01em}
 
@@ -468,7 +479,7 @@ tbody tr:hover{background:var(--surface-2)}
 .snav .ico{font-size:17px}
 .bulkbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--accent);
   border-radius:var(--r-xs);background:var(--accent-soft)}
-.bulkbar select{background:var(--surface-solid);border:1px solid var(--line);border-radius:var(--r-xs);padding:6px 9px;font-size:13px}
+.bulkbar select{background:var(--surface-solid);color:var(--text);border:1px solid var(--line);border-radius:var(--r-xs);padding:6px 9px;font-size:13px}
 .searchbox{display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line);
   border-radius:var(--r-xs);padding:0 10px;color:var(--muted)}
 .searchbox input{border:0;background:none;padding:8px 0;font-size:13px;min-width:190px;outline:none;color:var(--text)}
