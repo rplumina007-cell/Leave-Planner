@@ -57,7 +57,9 @@ change their password later with the 🔑 button.
 **Teams** decide who can see whom. An admin creates teams in **⚙ Settings →
 Teams** and gives each login one or more of them in **Users**. People see only
 those who share one of their teams — nothing at all about anyone else — and
-**All Teams** counts as every team. Someone with no team sees only themselves.
+**All Teams** lets its holder see everyone — but it never makes the holder visible
+to others: people only ever see someone they share a *named* team with. Someone
+with no team sees only themselves.
 Employees see fellow employees only: managers' and admins' leave, WFH and names
 never reach them, whatever the teams.
 
@@ -72,6 +74,11 @@ records.
 for people below them in the reporting chain (people assigned to them, to the
 managers assigned to them, and so on) who are also in one of their teams. Every
 rule is enforced by the server (`server/api.py`), not just hidden in the page.
+
+**Senior manager** is a role for the people other managers report to. It has the
+same permissions as a manager (see the Manager column above); choose it as the
+role in **Settings → Users**, then pick that person as the manager of the managers
+below them.
 
 **Security**
 - Passwords are stored as scrypt hashes (N=2^16, r=8, p=2); older, weaker hashes

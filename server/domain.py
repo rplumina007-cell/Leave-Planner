@@ -291,13 +291,15 @@ def sync_from_seed(state, seed, seed_hash):
 # ---------------------------------------------------------------- permissions
 #   Teams decide who sees whom; the reporting chain decides who a manager acts for.
 def shares_team(viewer, emp_id, users):
-    """Whether emp_id is in one of the viewer's teams. All Teams on either side
-    matches every team. Someone with no team - or no login - matches none."""
+    """Whether emp_id is in one of the viewer's teams. All Teams lets its holder
+    see everyone, but never exposes the holder: being in All Teams doesn't put
+    you in anyone else's team - others see you only through a named team you
+    share. Someone with no team - or no login - matches no named team."""
     mine = set(viewer.get("teams") or [])
-    theirs = set((users.get(emp_id) or {}).get("teams") or [])
     if ALL_TEAMS in mine:
         return True
-    return bool(mine) and (ALL_TEAMS in theirs or bool(mine & theirs))
+    theirs = set((users.get(emp_id) or {}).get("teams") or [])
+    return bool((mine & theirs) - {ALL_TEAMS})
 
 
 def can_see(viewer, emp_id, users):

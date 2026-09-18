@@ -69,7 +69,7 @@
   }
 
   function roleLine(user) {
-    return (ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId +
+    return (user.senior ? 'Senior manager' : ROLE_LABEL[user.role] || user.role) + ' · ' + user.empId +
       (user.teams && user.teams.length ? ' · ' + user.teams.join(', ') : '');
   }
 

@@ -6,7 +6,11 @@
 (function (W) {
   'use strict';
   var U = W.util, S = W.store, el = U.el, I = W.icon;
-  var ROLES = [['employee', 'Employee'], ['manager', 'Manager'], ['admin', 'Admin']];
+  /* Senior manager is stored as a manager with the senior designation (same
+     permissions); it's the role other managers are usually mapped to. */
+  var ROLES = [['employee', 'Employee'], ['manager', 'Manager'], ['senior_manager', 'Senior manager'], ['admin', 'Admin']];
+  function roleValue(u) { return u.senior ? 'senior_manager' : u.role; }
+  function roleLabel(v) { var r = ROLES.filter(function (x) { return x[0] === v; })[0]; return r ? r[1] : v; }
   var TABS = [['users', 'Users', 'users'], ['teams', 'Teams', 'team'], ['holidays', 'Public holidays', 'holiday'],
     ['lists', 'Dropdowns', 'sliders'], ['clean', 'Cleanup', 'broom'], ['data', 'Data', 'database']];
   var NO_TEAM = '__none__';
@@ -90,7 +94,7 @@
     var pw = el('input', { type: 'text', placeholder: 'One-time password', autocomplete: 'off', spellcheck: 'false' });
     var role = el('select', {}, ROLES.map(function (r) { return el('option', { value: r[0], text: r[1] }); }));
     var mgr = el('select', {}, [el('option', { value: '', text: '— none —' })].concat(managers().map(function (m) {
-      return el('option', { value: m.empId, text: m.name + ' (' + m.role + ')' });
+      return el('option', { value: m.empId, text: m.name + ' (' + roleLabel(roleValue(m)) + ')' });
     })));
     var teamPick = teamChecks([]);
     var err = el('div', {});
@@ -169,16 +173,16 @@
       var roleSel = el('select', {
         disabled: self || null, title: self ? 'You cannot change your own role' : null, 'aria-label': 'Role for ' + u.name,
         onchange: function (e) {
-          var msg = 'Change ' + u.name + ' to ' + e.target.value + '? They will be signed out.';
+          var msg = 'Change ' + u.name + ' to ' + roleLabel(e.target.value) + '? They will be signed out.';
           if (u.role !== 'employee' && e.target.value === 'employee' && reports) {
             msg += '\n\nTheir ' + reports + ' assigned report(s) will be left without a manager.';
           }
-          if (!confirm(msg)) { e.target.value = u.role; return; }
+          if (!confirm(msg)) { e.target.value = roleValue(u); return; }
           S.updateUser({ empId: u.empId, role: e.target.value }).then(function (res) {
-            if (res) U.toast(u.name + ' is now ' + e.target.value + (res.unassigned ? ' — ' + res.unassigned + ' report(s) unassigned' : ''));
+            if (res) U.toast(u.name + ' is now ' + roleLabel(e.target.value) + (res.unassigned ? ' — ' + res.unassigned + ' report(s) unassigned' : ''));
           });
         }
-      }, ROLES.map(function (r) { return el('option', { value: r[0], selected: u.role === r[0] || null, text: r[1] }); }));
+      }, ROLES.map(function (r) { return el('option', { value: r[0], selected: roleValue(u) === r[0] || null, text: r[1] }); }));
       var mgrSel = el('select', {
         'aria-label': 'Manager for ' + u.name,
         onchange: function (e) {
@@ -187,7 +191,7 @@
           });
         }
       }, [el('option', { value: '', text: '— none —' })].concat(managers(u.empId).map(function (m) {
-        return el('option', { value: m.empId, selected: u.managerEmpId === m.empId || null, text: m.name });
+        return el('option', { value: m.empId, selected: u.managerEmpId === m.empId || null, text: m.name + ' · ' + roleLabel(roleValue(m)) });
       })));
 
       var tr = el('tr', { style: u.active ? null : 'opacity:.6', data: { search: (u.name + ' ' + u.empId).toLowerCase() } }, [
@@ -403,7 +407,7 @@
         class: 'sub', text: 'People see only those who share one of their teams — managers in full, employees as dates ' +
           'without reasons. Someone with no team sees only themselves; admins always see everyone. Assign teams in Users.'
       }),
-      el('div', {}, [line(S.ALL_TEAMS, true, 'access to everyone\'s data', null)].concat(teams.map(function (t) {
+      el('div', {}, [line(S.ALL_TEAMS, true, 'members see everyone; it never makes them visible to others', null)].concat(teams.map(function (t) {
         return line(t, false, '', el('button', {
           class: 'btn bad sm', type: 'button', text: 'Remove', onclick: function () {
             var n = members(t).length;

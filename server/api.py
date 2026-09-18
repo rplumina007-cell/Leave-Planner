@@ -20,7 +20,18 @@ import domain
 import security
 from domain import RuleError
 
-ROLES = ("employee", "manager", "admin")
+ROLES = ("employee", "manager", "admin")          # stored roles
+
+
+def split_role(value):
+    """A role chosen in Settings -> (stored role, senior flag). A senior manager is
+    a manager with the senior designation: the same permissions, and the person
+    other managers are mapped to."""
+    if value == "senior_manager":
+        return "manager", True
+    if value in ROLES:
+        return value, False
+    raise ApiError(400, "Unknown role")
 EMP_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
 # Reachable while a user still has to replace their initial password.
 PASSWORD_GATE_OPEN = {"/api/me", "/api/me/password", "/api/logout"}
@@ -34,7 +45,7 @@ class ApiError(Exception):
 
 def public_user(u):
     return {"empId": u["emp_id"], "name": u["name"], "role": u["role"],
-            "managerEmpId": u["manager_emp_id"], "teams": u.get("teams") or [],
+            "managerEmpId": u["manager_emp_id"], "teams": u.get("teams") or [], "senior": bool(u.get("senior")),
             "mustChange": u["must_change"], "active": u["active"]}
 
 
@@ -235,8 +246,7 @@ def create_user(app, body, ctx):
         raise ApiError(400, "Employee ID may use letters, digits, dot, dash or underscore (max 32)")
     if not 2 <= len(name) <= 80:
         raise ApiError(400, "Enter the employee's full name")
-    if role not in ROLES:
-        raise ApiError(400, "Unknown role")
+    role, senior = split_role(role)
     if app.db.user(emp):
         raise ApiError(409, "A login for employee ID %s already exists" % emp)
     problem = security.password_problem(body.get("password", ""), emp, name)
@@ -244,8 +254,9 @@ def create_user(app, body, ctx):
         raise ApiError(400, problem)
     manager = _check_manager(app, body.get("managerEmpId"), emp)
     teams = _check_teams(app, body.get("teams"))
-    app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams)
-    app.db.mutate(lambda st: domain.log(st, "login created (%s)" % role, "users", emp, name, ctx["user"]["name"]))
+    app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams, senior=senior)
+    label = "senior manager" if senior else role
+    app.db.mutate(lambda st: domain.log(st, "login created (%s)" % label, "users", emp, name, ctx["user"]["name"]))
     return {"state": state_payload(app, ctx["user"])}, []
 
 
@@ -263,11 +274,11 @@ def update_user(app, body, ctx):
             raise ApiError(400, "Enter the employee's full name")
         changes["name"] = name
     if "role" in body:
-        if body["role"] not in ROLES:
-            raise ApiError(400, "Unknown role")
-        if u["role"] == "admin" and body["role"] != "admin" and app.db.count_admins(exclude=emp) == 0:
+        role, senior = split_role(body["role"])
+        if u["role"] == "admin" and role != "admin" and app.db.count_admins(exclude=emp) == 0:
             raise ApiError(400, "There must always be at least one active admin")
-        changes["role"] = body["role"]
+        changes["role"] = role
+        changes["senior"] = senior
     if "managerEmpId" in body:
         changes["manager_emp_id"] = _check_manager(app, body["managerEmpId"], emp)
     if "teams" in body:

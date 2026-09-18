@@ -18,7 +18,7 @@ import time
 import domain
 import security
 
-USER_FIELDS = ("emp_id", "name", "role", "manager_emp_id", "teams", "must_change", "active", "created_at", "updated_at")
+USER_FIELDS = ("emp_id", "name", "role", "manager_emp_id", "teams", "senior", "must_change", "active", "created_at", "updated_at")
 SCHEMA_LOCK_ID = 7300451   # arbitrary; serialises schema setup when several instances cold-start at once
 
 
@@ -38,6 +38,7 @@ def schema(pg):
              must_change    INTEGER NOT NULL DEFAULT 1,
              active         INTEGER NOT NULL DEFAULT 1,
              teams          TEXT NOT NULL DEFAULT '[]',
+             senior         INTEGER NOT NULL DEFAULT 0,
              created_at     TEXT NOT NULL,
              updated_at     TEXT NOT NULL)""",
         """CREATE TABLE IF NOT EXISTS sessions (
@@ -58,6 +59,7 @@ def _user(row, include_hash):
     u = {f: row[f] for f in USER_FIELDS}
     u["must_change"], u["active"] = bool(u["must_change"]), bool(u["active"])
     u["teams"] = json.loads(u["teams"] or "[]")
+    u["senior"] = bool(u["senior"])      # senior manager: a manager with the senior designation
     if include_hash:
         u["pw_hash"] = row["pw_hash"]
     return u
@@ -107,8 +109,11 @@ class DB:
                          " WHERE table_schema = current_schema() AND table_name = 'users'")
         else:
             rows = c.all("PRAGMA table_info(users)")
-        if "teams" not in {r["name"] for r in rows}:
+        have = {r["name"] for r in rows}
+        if "teams" not in have:
             c.execute("ALTER TABLE users ADD COLUMN teams TEXT NOT NULL DEFAULT '[]'")
+        if "senior" not in have:
+            c.execute("ALTER TABLE users ADD COLUMN senior INTEGER NOT NULL DEFAULT 0")
 
     # ------------------------------------------------------------ connections
     def _connect(self):
@@ -182,17 +187,17 @@ class DB:
             r = c.one("SELECT * FROM users WHERE emp_id = ?", (emp_id,))
         return _user(r, include_hash) if r else None
 
-    def create_user(self, emp_id, name, role, password, manager_emp_id=None, must_change=True, teams=None):
+    def create_user(self, emp_id, name, role, password, manager_emp_id=None, must_change=True, teams=None, senior=False):
         now = domain.now_iso()
         with self._lock, self.tx() as c:
             c.execute(
-                "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, pw_hash, must_change, active, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
-                (emp_id, name, role, manager_emp_id or None, json.dumps(teams or []), security.hash_password(password),
-                 int(bool(must_change)), now, now))
+                "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, senior, pw_hash, must_change, active, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                (emp_id, name, role, manager_emp_id or None, json.dumps(teams or []), int(bool(senior)),
+                 security.hash_password(password), int(bool(must_change)), now, now))
 
     def update_user(self, emp_id, **fields):
-        allowed = {"name", "role", "manager_emp_id", "teams", "must_change", "active"}
+        allowed = {"name", "role", "manager_emp_id", "teams", "senior", "must_change", "active"}
         sets = {k: (json.dumps(v) if k == "teams" else int(v) if isinstance(v, bool) else v)
                 for k, v in fields.items() if k in allowed}
         if "password" in fields:
@@ -268,9 +273,10 @@ class DB:
             c.execute("DELETE FROM users")
             for u in users:                     # managers are linked after everyone exists
                 c.execute(
-                    "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, pw_hash, must_change, active, created_at, updated_at)"
-                    " VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
-                    (u["emp_id"], u["name"], u["role"], json.dumps(u.get("teams") or []), u["pw_hash"], int(bool(u["must_change"])),
+                    "INSERT INTO users (emp_id, name, role, manager_emp_id, teams, senior, pw_hash, must_change, active, created_at, updated_at)"
+                    " VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                    (u["emp_id"], u["name"], u["role"], json.dumps(u.get("teams") or []), int(bool(u.get("senior"))),
+                     u["pw_hash"], int(bool(u["must_change"])),
                      int(bool(u["active"])), u["created_at"], u["updated_at"]))
             for u in users:
                 if u.get("manager_emp_id"):

@@ -186,7 +186,8 @@ def main():
     print("\n-- employee (E1, in Alpha)")
     s, st = e1.req("GET", "/api/state")
     seen = sorted(p["empId"] for p in st["people"])
-    check("employee sees fellow employees in their team only (G1 in All Teams; not manager M1)", s == 200 and seen == ["E1", "G1"], seen)
+    check("employee sees fellow employees in their named teams only (not manager M1, not G1 who is only in All Teams)",
+          s == 200 and seen == ["E1"], seen)
     check("employee gets no records of their manager or any admin",
           not [r for k in ("leave", "wfh") for r in st[k] if r["empId"] in ("M1", "M2", "A1")])
     check("employee gets no records for anyone outside their teams",
@@ -250,15 +251,18 @@ def main():
     s, st = m1.req("GET", "/api/state")
     seen = sorted(p["empId"] for p in st["people"])
     owners = {r["empId"] for k in ("leave", "wfh") for r in st[k]}
-    check("manager sees everyone sharing a team, incl. G1 (All Teams)", s == 200 and seen == ["E1", "E2", "G1", "M1", "M2"], seen)
+    check("manager sees everyone sharing a named team (not G1, whose only team is All Teams)", s == 200 and seen == ["E1", "E2", "M1", "M2"], seen)
     check("manager gets no records for anyone outside their teams (E5, sheet-only people)", owners <= set(seen), owners)
     check("manager sees their teams in full", owners and not any(r.get("redacted") for k in ("leave", "wfh") for r in st[k]))
     check("manager's team list matches who they can see", sorted(u["empId"] for u in st.get("team", [])) == seen, st.get("team"))
     check("manager acts only for people below them AND in their teams",
           sorted(p["empId"] for p in st["people"] if p["canApply"]) == ["E1", "E2", "M1", "M2"])
     _, st2 = m2.req("GET", "/api/state")
-    check("junior manager sees their own team (Beta: M1, E2) and G1", sorted(p["empId"] for p in st2["people"]) == ["E2", "G1", "M1", "M2"],
+    check("junior manager sees their own team only (Beta: M1, E2)", sorted(p["empId"] for p in st2["people"]) == ["E2", "M1", "M2"],
           [p["empId"] for p in st2["people"]])
+    admin.req("POST", "/api/users/update", {"empId": "A1", "teams": ["All Teams"]})
+    check("being in All Teams doesn't expose someone to a manager who shares no named team with them",
+          "A1" not in {p["empId"] for p in m1.req("GET", "/api/state")[1]["people"]})
     check("junior manager acts only for E2", sorted(p["empId"] for p in st2["people"] if p["canApply"]) == ["E2", "M2"])
     s, b = m1.req("POST", "/api/requests", dict(req, forEmpId="E1", **{"from": "2026-10-21", "to": "2026-10-21"}))
     check("manager files leave for someone they manage", s == 200, b)
@@ -337,6 +341,19 @@ def main():
           admin.req("POST", "/api/requests", dict(hol_req, **{"from": "2026-11-03", "duration": "Half Day - 1st Half"}))[0] == 400)
     check("admin removes a holiday", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 200)
     check("removing an unknown holiday refused", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 400)
+    check("admin creates a senior manager", admin.req("POST", "/api/users", {
+        "empId": "S1", "name": "Sana Senior", "role": "senior_manager", "password": "Start-Here-2026", "teams": ["Alpha"]})[0] == 200)
+    check("a manager can be mapped to a senior manager", admin.req("POST", "/api/users/update", {"empId": "M1", "managerEmpId": "S1"})[0] == 200)
+    s1 = [u for u in admin.req("GET", "/api/state")[1]["team"] if u["empId"] == "S1"]
+    check("senior manager is a manager with the senior designation", s1 and s1[0]["role"] == "manager" and s1[0]["senior"] is True, s1)
+    sc = Client(port)
+    check("S1 replaces one-time password", sc.ready("S1", "Start-Here-2026", "Pebble-Ridge-77")[0] == 200)
+    s, b = m1.req("POST", "/api/requests", dict(req, **{"from": "2026-11-09", "to": "2026-11-09"}))
+    check("senior manager approves a manager mapped to them", s == 200 and decide(sc, b["id"])[0] == 200, b)
+    check("senior manager can be changed back to manager", admin.req("POST", "/api/users/update", {"empId": "S1", "role": "manager"})[0] == 200
+          and not [u for u in admin.req("GET", "/api/state")[1]["team"] if u["empId"] == "S1"][0]["senior"])
+    check("unknown role refused", admin.req("POST", "/api/users", {
+        "empId": "S2", "name": "Sid Other", "role": "boss", "password": "Start-Here-2026"})[0] == 400)
     s, b = admin.req("POST", "/api/logout", {})
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
 

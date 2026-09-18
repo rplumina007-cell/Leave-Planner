@@ -78,7 +78,7 @@ def main(argv=None):
             print("No logins yet.")
         for u in users.values():
             print("%-10s %-24s %-9s manager=%-10s %s%s" % (
-                u["emp_id"], u["name"], u["role"], u["manager_emp_id"] or "-",
+                u["emp_id"], u["name"], "senior mgr" if u.get("senior") else u["role"], u["manager_emp_id"] or "-",
                 "active" if u["active"] else "INACTIVE", "  (must change password)" if u["must_change"] else ""))
     print("Database: %s" % where)
 
