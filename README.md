@@ -289,6 +289,15 @@ A full page, opened from the profile menu, with six sections:
   them to — or remove them from — a team in one go. People who appear in the
   records but have no login are listed as one-click prefills. Deleting a login
   keeps that person's leave and WFH history.
+
+  **Add many at once from Excel:** *Download template* (a Users sheet with a
+  Role dropdown, plus instructions listing today's teams), fill in one row per
+  person, then choose the file (.xlsx or .csv, up to 500 people). Every row is
+  checked first — existing or duplicate IDs, unknown roles or teams, weak
+  passwords, missing managers (a manager can be someone else in the same file)
+  — and nothing is created until you confirm. Only rows that pass are created;
+  blank passwords are generated, and the one-time passwords are shown once and
+  can be downloaded as a CSV to hand out.
 - **Teams** — create and remove teams; **All Teams** is built in.
 - **Public holidays** — add or remove dated, named holidays. They're shaded on
   the calendar and don't count as working days in new requests, day counts and

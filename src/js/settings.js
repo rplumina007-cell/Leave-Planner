@@ -15,7 +15,8 @@
     ['lists', 'Dropdowns', 'sliders'], ['clean', 'Cleanup', 'broom'], ['data', 'Data', 'database']];
   var NO_TEAM = '__none__';
 
-  var view = { tab: 'users', team: 'all', q: '', picked: {} };
+  var view = { tab: 'users', team: 'all', q: '', picked: {}, importResult: null };
+  var importFile = null;       // the chosen spreadsheet, kept for the confirm step
 
   function randomPassword(emp, name) {
     var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -30,13 +31,16 @@
     }
   }
 
-  function download(text, filename, type) {
+  function downloadBlob(blob, filename) {
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: type }));
+    a.href = URL.createObjectURL(blob);
     a.download = filename;
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
   }
+  function download(text, filename, type) { downloadBlob(new Blob([text], { type: type }), filename); }
 
   function team() { return S.state.team || []; }
   function managers(exceptEmp) {
@@ -300,6 +304,7 @@
           }))
         ]) : null
       ]),
+      importBox(),
       el('div', { style: 'border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px' }, [
         el('div', { class: 'row', style: 'gap:10px' }, [
           el('h3', { style: 'font-size:13px', text: 'Logins (' + team().length + ')' }),
@@ -321,6 +326,133 @@
     applySearch();
     syncBar();
     return panel;
+  }
+
+  /* ---- many logins from a spreadsheet: the server reads and checks the file ---- */
+  function readBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result).split(',')[1] || ''); };
+      r.onerror = function () { reject(new Error('Could not read that file')); };
+      r.readAsDataURL(file);
+    });
+  }
+  function csvCell(v) {
+    var s = String(v === undefined || v === null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  function getTemplate() {
+    fetch('/api/users/template', { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || 'Could not download the template'); });
+      }
+      return r.blob();
+    }).then(function (blob) { downloadBlob(blob, 'leave-planner-users-template.xlsx'); }, function (e) { U.toast(e.message); });
+  }
+
+  function importBox() {
+    var res = view.importResult;
+    var err = el('div', {});
+    function send(commit) {
+      return readBase64(importFile).then(function (b64) {
+        return commit ? S.importUsers(importFile.name, b64) : S.previewImport(importFile.name, b64);
+      });
+    }
+    var input = el('input', {
+      type: 'file', accept: '.xlsx,.csv', 'aria-label': 'Choose a filled-in template (.xlsx or .csv)',
+      onchange: function (e) {
+        var f = e.target.files && e.target.files[0];
+        U.clear(err);
+        if (!f) return;
+        if (f.size > 2 * 1024 * 1024) { errBox(err, 'Files up to 2 MB, please — split larger lists.'); return; }
+        importFile = f;
+        send(false).then(function (r) {
+          view.importResult = { rows: r.rows, ready: r.ready, committed: false, filename: f.name };
+          W.app.rerender();
+        }, function (e2) { importFile = null; errBox(err, e2.message); });
+      }
+    });
+    function clear() { view.importResult = null; importFile = null; W.app.rerender(); }
+    function commit() {
+      if (!importFile) { errBox(err, 'Choose the file again, then create.'); return; }
+      if (!confirm('Create ' + res.ready + ' login' + (res.ready === 1 ? '' : 's') + ' from ' + res.filename + '?')) return;
+      send(true).then(function (r) {
+        importFile = null;
+        view.importResult = { rows: r.rows, created: r.created, committed: true, filename: res.filename };
+        W.app.rerender();
+        U.toast(r.created + ' login' + (r.created === 1 ? '' : 's') + ' created');
+      }, function (e2) { errBox(err, e2.message); });
+    }
+    function savePasswords() {
+      var made = res.rows.filter(function (p) { return p.created; });
+      var text = ['Employee ID', 'Full name', 'One-time password'].map(csvCell).join(',') + '\n' +
+        made.map(function (p) { return [p.empId, p.name, p.oneTimePassword].map(csvCell).join(','); }).join('\n');
+      download(text, 'leave-planner-one-time-passwords-' + U.todayISO() + '.csv', 'text/csv;charset=utf-8');
+    }
+
+    var body = [
+      el('div', { class: 'row', style: 'gap:10px' }, [
+        el('h3', { style: 'font-size:13px', text: 'Add many logins from Excel' }),
+        el('span', { style: 'flex:1' }),
+        el('button', { class: 'btn sm', type: 'button', onclick: getTemplate }, [I('download'), 'Download template'])
+      ]),
+      el('div', {
+        class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column — then choose the file. ' +
+          'Every row is checked first; nothing is created until you confirm. Up to 500 people per file (.xlsx or .csv).'
+      }),
+      res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in template', input]),
+      err
+    ];
+    if (res) {
+      var bad = res.rows.filter(function (p) { return p.errors.length && !p.created; }).length;
+      body.push(el('div', { class: 'row', style: 'gap:10px' }, [
+        el('b', { text: res.committed ? res.created + ' created' : res.ready + ' ready to create' }),
+        bad ? el('span', { class: 'pill Declined', text: bad + (res.committed ? ' not created' : ' need fixing') }) : null,
+        el('span', { class: 'sub', text: res.filename }),
+        el('span', { style: 'flex:1' }),
+        !res.committed && res.ready ? el('button', { class: 'btn primary', type: 'button', onclick: commit },
+          [I('plus'), 'Create ' + res.ready + ' login' + (res.ready === 1 ? '' : 's')]) : null,
+        res.committed && res.created ? el('button', { class: 'btn', type: 'button', onclick: savePasswords },
+          [I('download'), 'Download one-time passwords']) : null,
+        el('button', { class: 'btn sm', type: 'button', text: res.committed ? 'Done' : 'Clear', onclick: clear })
+      ]));
+      if (res.committed && res.created) {
+        body.push(el('div', {
+          class: 'sub', style: 'font-size:12px;color:var(--warn);font-weight:600', text: 'One-time passwords are shown only now. Give each person theirs ' +
+            'privately; they must choose their own at first sign-in. Delete any downloaded copy afterwards.'
+        }));
+      } else if (bad && !res.committed) {
+        body.push(el('div', {
+          class: 'sub', style: 'font-size:12px', text: 'Fix the rows marked below in your file and choose it again — ' +
+            'or create the ready ones now and add the rest later.'
+        }));
+      }
+      body.push(el('div', { class: 'scroll', style: 'max-height:380px;overflow-y:auto' }, [el('table', {}, [
+        el('thead', {}, [el('tr', {}, ['Row', 'Employee ID', 'Name', 'Role', 'Manager', 'Teams', res.committed ? 'Result' : 'Check']
+          .concat(res.committed ? ['One-time password'] : []).map(function (t) { return el('th', { text: t }); }))]),
+        el('tbody', {}, res.rows.map(function (p) {
+          var status = p.errors.map(function (m) { return el('div', { class: 'err', style: 'margin:0', text: m }); });
+          if (p.created || (!res.committed && !p.errors.length)) {
+            status.unshift(el('span', {
+              class: 'pill Approved',
+              text: p.created ? 'Created' : (p.passwordGiven ? 'Ready' : 'Ready · password will be generated')
+            }));
+          }
+          return el('tr', {}, [
+            el('td', { class: 'mono', text: String(p.row) }),
+            el('td', { class: 'mono', text: p.empId || '—' }),
+            el('td', { text: p.name || '—' }),
+            el('td', { text: p.role ? roleLabel(p.role) : '—' }),
+            el('td', { class: 'mono', text: p.manager || '—' }),
+            el('td', { text: p.teams.length ? p.teams.join(', ') : '—' }),
+            el('td', {}, status),
+            res.committed ? el('td', { class: 'mono', text: p.oneTimePassword || '' }) : null
+          ]);
+        }))
+      ])]));
+    }
+    return el('div', { style: 'border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px' }, body);
   }
 
   function askReset(u) {

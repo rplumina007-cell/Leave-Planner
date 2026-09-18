@@ -231,6 +231,13 @@
     return call('/api/users/reset-password', { empId: empId, password: password }, { raise: true });
   }
   function deleteUser(empId) { return call('/api/users/delete', { empId: empId }); }
+  /* Many logins from a spreadsheet: check first (nothing saved), then create. */
+  function previewImport(filename, data) {
+    return W.api.post('/api/users/import', { filename: filename, data: data, commit: false });
+  }
+  function importUsers(filename, data) {
+    return call('/api/users/import', { filename: filename, data: data, commit: true }, { raise: true });
+  }
   function createTeam(name) { return call('/api/teams/add', { name: name }, { raise: true }); }
   function removeTeam(name) { return call('/api/teams/remove', { name: name }); }
 
@@ -264,7 +271,7 @@
     addOption: addOption, removeOption: removeOption, setPlannedReason: setPlannedReason,
     purge: purge, syncFromSeed: syncFromSeed,
     createUser: createUser, updateUser: updateUser, resetPassword: resetPassword, deleteUser: deleteUser,
-    createTeam: createTeam, removeTeam: removeTeam,
+    createTeam: createTeam, removeTeam: removeTeam, previewImport: previewImport, importUsers: importUsers,
     changePassword: changePassword, logout: logout, exportJSON: exportJSON
   };
 })(window.WFS);

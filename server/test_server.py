@@ -10,9 +10,13 @@ and your real database is never touched.
 To run the same checks against Postgres, point TEST_DATABASE_URL at a THROWAWAY
 database (e.g. a separate Neon branch) - its tables are dropped first.
 """
+import base64
 import datetime
 import http.client
+import io
 import json
+import zipfile
+from xml.sax.saxutils import escape as xml_escape
 import os
 import shutil
 import sys
@@ -90,6 +94,35 @@ def synthetic_seed(path):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(seed, f)
     return path
+
+
+def xlsx_bytes(rows, doctype=False):
+    """A minimal .xlsx like Excel writes: shared strings for text, plain numbers
+    for digits, and no workbook relationships (so the reader's fallback is used)."""
+    strings, xml_rows = [], []
+    for r_i, row in enumerate(rows, 1):
+        cells = []
+        for c_i, v in enumerate(row):
+            ref = "ABCDEF"[c_i] + str(r_i)
+            if v == "":
+                continue
+            if v.isdigit():
+                cells.append('<c r="%s"><v>%s</v></c>' % (ref, v))
+            else:
+                strings.append(v)
+                cells.append('<c r="%s" t="s"><v>%d</v></c>' % (ref, len(strings) - 1))
+        xml_rows.append('<row r="%d">%s</row>' % (r_i, "".join(cells)))
+    ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    sheet = '<worksheet xmlns="%s"><sheetData>%s</sheetData></worksheet>' % (ns, "".join(xml_rows))
+    if doctype:
+        sheet = '<!DOCTYPE x [<!ENTITY a "b">]>' + sheet
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("[Content_Types].xml", '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>')
+        z.writestr("xl/workbook.xml", '<workbook xmlns="%s"><sheets><sheet name="Users" sheetId="1"/></sheets></workbook>' % ns)
+        z.writestr("xl/sharedStrings.xml", '<sst xmlns="%s">%s</sst>' % (ns, "".join("<si><t>%s</t></si>" % xml_escape(s) for s in strings)))
+        z.writestr("xl/worksheets/sheet1.xml", sheet)
+    return buf.getvalue()
 
 
 def main():
@@ -354,6 +387,59 @@ def main():
           and not [u for u in admin.req("GET", "/api/state")[1]["team"] if u["empId"] == "S1"][0]["senior"])
     check("unknown role refused", admin.req("POST", "/api/users", {
         "empId": "S2", "name": "Sid Other", "role": "boss", "password": "Start-Here-2026"})[0] == 400)
+
+    print("\n-- adding many logins from a spreadsheet")
+    s, tpl, h = admin.req("GET", "/api/users/template", raw=True)
+    tpl_ok = s == 200 and "spreadsheetml" in h.get("Content-Type", "")
+    if tpl_ok:
+        with zipfile.ZipFile(io.BytesIO(tpl)) as z:
+            sheet1 = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+            guide = z.read("xl/worksheets/sheet2.xml").decode("utf-8")
+        tpl_ok = all(t in sheet1 for t in ("Employee ID", "Full name", "Role", "Manager employee ID", "Teams")) and "Alpha" in guide
+    check("admin downloads the Excel template (headings, and today's teams listed)", tpl_ok, s)
+    check("non-admins can't download the template", e5.req("GET", "/api/users/template")[0] == 403)
+    imp = lambda c, raw, name="people.xlsx", commit=False: c.req("POST", "/api/users/import", {
+        "filename": name, "data": base64.b64encode(raw).decode(), "commit": commit})
+    check("the untouched template is refused with a clear message", imp(admin, tpl)[0] == 400)
+    sheet_rows = [["Employee ID", "Full name", "Role", "Manager employee ID", "Teams", "One-time password (optional)"],
+                  ["9001", "Nina Newhire", "Employee", "M1", "Alpha", ""],
+                  ["N2", "Omar Oneday", "Senior manager", "", "beta", "Harbor-Quartz-88"],
+                  ["N3", "Pia Pending", "employee", "N2", "Beta", ""],
+                  ["E1", "Dup Person", "Employee", "", "", ""],
+                  ["N4", "Quinn Quiet", "Chief", "", "", ""],
+                  ["N5", "Rae Remote", "Employee", "", "Nowhere", ""],
+                  ["N6", "Sam Simple", "Employee", "", "", "password123"],
+                  ["N7", "Tia Twin", "Employee", "", "", ""],
+                  ["N7", "Tia Again", "Employee", "", "", ""],
+                  ["N8", "Uma Unknown", "Employee", "ZZ9", "", ""]]
+    book = xlsx_bytes(sheet_rows)
+    s, b = imp(admin, book)
+    errs = {r["empId"] + "@" + str(r["row"]): r["errors"] for r in b.get("rows", [])}
+    check("preview marks exactly the good rows ready (IDs typed as numbers included)",
+          s == 200 and b.get("ready") == 4 and not any(errs.get(k) for k in ("9001@2", "N2@3", "N3@4", "N7@9")), b)
+    check("preview explains every problem row (existing ID, bad role, unknown team, weak password, duplicate, unknown manager)",
+          all(errs.get(k) for k in ("E1@5", "N4@6", "N5@7", "N6@8", "N7@10", "N8@11")), errs)
+    check("preview creates nothing", "9001" not in {u["empId"] for u in admin.req("GET", "/api/state")[1]["team"]})
+    check("non-admins can't import", imp(e5, book)[0] == 403)
+    s, b = imp(admin, book, commit=True)
+    made = {r["empId"]: r for r in b.get("rows", []) if r.get("created")}
+    check("import creates only the rows that passed", s == 200 and b.get("created") == 4 and sorted(made) == ["9001", "N2", "N3", "N7"],
+          (s, b.get("created"), sorted(made)))
+    people = {u["empId"]: u for u in b.get("state", {}).get("team", [])}
+    check("imported people get their role, teams and manager (incl. a manager from the same file)",
+          people.get("9001", {}).get("managerEmpId") == "M1" and people.get("9001", {}).get("teams") == ["Alpha"]
+          and people.get("N2", {}).get("senior") is True and people.get("N2", {}).get("teams") == ["Beta"]
+          and people.get("N3", {}).get("managerEmpId") == "N2", {k: people.get(k) for k in ("9001", "N2", "N3")})
+    check("a one-time password given in the file is used", made.get("N2", {}).get("oneTimePassword") == "Harbor-Quartz-88")
+    s, b = Client(port).login("9001", made.get("9001", {}).get("oneTimePassword") or "x")
+    check("an imported person signs in with the generated password and must change it", s == 200 and b["user"]["mustChange"], b)
+    s, b = imp(admin, b"Employee ID,Full name\r\nC1,Carl Csv\r\n", "people.csv")
+    check("a .csv file works too", s == 200 and b.get("ready") == 1, b)
+    many = ("Employee ID,Full name\n" + "".join("X%d,Xavier Person\n" % i for i in range(501))).encode()
+    check("more than 500 people in a file refused", imp(admin, many, "big.csv")[0] == 400)
+    check("an old .xls file gets a clear message", imp(admin, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64, "old.xls")[0] == 400)
+    check("a workbook with XML entity tricks is refused", imp(admin, xlsx_bytes(sheet_rows, doctype=True))[0] == 400)
+    check("random bytes are refused", imp(admin, bytes(range(256)) * 4, "junk.xlsx")[0] == 400)
     s, b = admin.req("POST", "/api/logout", {})
     check("logout ends the session", s == 200 and admin.req("GET", "/api/state")[0] == 401)
 

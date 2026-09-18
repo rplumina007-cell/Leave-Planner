@@ -13,12 +13,17 @@ Roles:
   admin     full access to everyone - including people who have records but no
             login yet - plus users, roles, teams, manager assignments and settings
 """
+import base64
+import binascii
 import os
 import re
 
+import bulk_users
 import domain
 import security
 from domain import RuleError
+
+IMPORT_MAX_FILE = 2 * 1024 * 1024      # a spreadsheet of logins
 
 ROLES = ("employee", "manager", "admin")          # stored roles
 
@@ -334,6 +339,51 @@ def delete_user(app, body, ctx):
     return {"state": state_payload(app, admin)}, []
 
 
+# ------------------------------------------------------------------ many logins from a spreadsheet (admin)
+def template_file(app, ctx):
+    """(status, xlsx bytes or an error payload) - wsgi sends a 200 as a file."""
+    user = ctx["user"]
+    if not user:
+        return 401, {"error": "Please sign in"}
+    if user["must_change"]:
+        return 403, {"error": "Please set a new password first", "mustChange": True}
+    if user["role"] != "admin":
+        return 403, {"error": "You don't have permission to do that"}
+    return 200, bulk_users.template_xlsx(app.db.read_state().get("teams", []))
+
+
+def _import_row(p):
+    return {"row": p["row"], "empId": p["empId"], "name": p["name"],
+            "role": "senior_manager" if p["senior"] else p["role"], "manager": p["manager"], "teams": p["teams"],
+            "passwordGiven": bool(p["password"]), "errors": p["errors"],
+            "created": bool(p.get("created")), "oneTimePassword": p.get("oneTimePassword")}
+
+
+def import_users(app, body, ctx):
+    """Preview (commit false) or create (commit true) logins from an .xlsx/.csv.
+    Every row is checked like a single login; only rows that pass are created."""
+    admin = ctx["user"]
+    need(admin, "admin")
+    try:
+        raw = base64.b64decode(str(body.get("data") or ""), validate=True)
+    except (ValueError, binascii.Error):
+        raise ApiError(400, "Could not read that file")
+    if not raw:
+        raise ApiError(400, "That file is empty")
+    if len(raw) > IMPORT_MAX_FILE:
+        raise ApiError(413, "Files up to 2 MB, please — split larger lists")
+    filename = str(body.get("filename") or "")[:120]
+    rows = bulk_users.read_rows(filename, raw)
+    plan = bulk_users.plan(rows, app.db.users(), app.db.read_state().get("teams", []))
+    ready = [p for p in plan if not p["errors"]]
+    if not body.get("commit"):
+        return {"rows": [_import_row(p) for p in plan], "ready": len(ready)}, []
+    done = bulk_users.create(app.db, ready)
+    if done:
+        app.db.mutate(lambda st: domain.log(st, "logins imported (%d)" % len(done), "users", "", filename, admin["name"]))
+    return {"rows": [_import_row(p) for p in plan], "created": len(done), "state": state_payload(app, admin)}, []
+
+
 # ------------------------------------------------------------------ public holidays (admin)
 def holiday_add(app, body, ctx):
     need(ctx["user"], "admin")
@@ -452,6 +502,7 @@ ROUTES = {
     ("POST", "/api/users/update"): update_user,
     ("POST", "/api/users/reset-password"): reset_password,
     ("POST", "/api/users/delete"): delete_user,
+    ("POST", "/api/users/import"): import_users,
     ("POST", "/api/holidays/add"): holiday_add,
     ("POST", "/api/holidays/remove"): holiday_remove,
     ("POST", "/api/teams/add"): team_add,

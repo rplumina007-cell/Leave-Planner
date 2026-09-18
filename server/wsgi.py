@@ -24,6 +24,8 @@ import security   # noqa: E402
 
 COOKIE = "wfs_session"
 MAX_BODY = 64 * 1024
+IMPORT_MAX_BODY = 3 * 1024 * 1024      # /api/users/import carries a spreadsheet (base64)
+XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # Served without a session: just enough to draw the sign-in page.
 PUBLIC_FILES = {"/login.html", "/src/css/app.css", "/src/css/fonts.css", "/src/js/login.js",
                 "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png"}
@@ -146,6 +148,12 @@ class _Request:
                 return self.post(path)
             if self.method not in ("GET", "HEAD"):
                 return self.json(405, {"error": "Method not allowed"})
+            if path == "/api/users/template":
+                status, out = api.template_file(self.app, self.ctx())
+                if status != 200:
+                    return self.json(status, out)
+                return self.send(200, out, XLSX_TYPE, extra=[
+                    ("Content-Disposition", 'attachment; filename="leave-planner-users-template.xlsx"')])
             status, payload, extra = api.handle(self.app, "GET", path, {}, self.ctx())
             if path == "/api/export" and status == 200:
                 extra = extra + [("Content-Disposition", 'attachment; filename="leave-planner-export.json"')]
@@ -177,7 +185,7 @@ class _Request:
             length = int(self.env.get("CONTENT_LENGTH") or 0)
         except ValueError:
             length = -1
-        if length < 0 or length > MAX_BODY:
+        if length < 0 or length > (IMPORT_MAX_BODY if path == "/api/users/import" else MAX_BODY):
             return self.json(413, {"error": "Request too large"})
         try:
             body = json.loads(self.env["wsgi.input"].read(length) or b"{}") if length else {}
