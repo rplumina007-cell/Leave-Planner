@@ -33,6 +33,21 @@
     return S.isPlanned(rec) ? 'planned' : 'unplanned';
   }
 
+  /* A day is "booked" when someone already has approved leave on it. Managers and
+     admins see approved planned leave; employees - who aren't shown whether a
+     colleague's leave was planned - see any approved leave, so the kind of leave
+     stays private. Only the team filter applies: Type and Status filters never
+     hide a booking. */
+  function booksDay(rec, kind) {
+    if (kind !== 'leave' || rec.status !== 'Approved' || !inTeam(rec)) return false;
+    return S.is('employee') ? true : !rec.redacted && S.isPlanned(rec);
+  }
+  function bookedTag() { return el('span', { class: 'booked-tag' }, [I('planned'), 'Booked']); }
+  function bookedTitle(bk) {
+    return 'Booked — ' + W.analytics.uniq(bk.map(function (e) { return e.rec.name; })).join(', ') +
+      (S.is('employee') ? ' on approved leave' : ' on approved planned leave');
+  }
+
   function passes(rec, kind) {
     if (!inTeam(rec)) return false;
     if (view.kind !== 'both' && view.kind !== kind) return false;
@@ -86,6 +101,7 @@
     var members = S.state.people.filter(inTeam);
     if (view.person !== 'all' && !members.some(function (x) { return x.name === view.person; })) view.person = 'all';
     var index = S.byDate(passes);
+    var booked = S.byDate(booksDay);
     var phone = !!(PHONE && PHONE.matches);
 
     var p = view.month.split('-'), year = +p[0], mon = +p[1] - 1;
@@ -123,7 +139,7 @@
 
     var calCard = el('div', { class: 'card' }, [
       head,
-      phone ? agenda(index, year, mon) : monthGrid(index, year, mon),
+      phone ? agenda(index, year, mon, booked) : monthGrid(index, year, mon, booked),
       legend(phone)
     ]);
 
@@ -134,7 +150,7 @@
   }
 
   /* ---- desktop: the month grid ---- */
-  function monthGrid(index, year, mon) {
+  function monthGrid(index, year, mon, booked) {
     var first = new Date(year, mon, 1);
     var start = U.addDays(first, -((first.getDay() + 6) % 7));   // grid starts Monday
     var cells = [];
@@ -159,6 +175,8 @@
       if (d.getMonth() !== mon) cls += ' out';
       if (U.isWeekend(d)) cls += ' we';
       if (hol) cls += ' hol';
+      var bk = booked[key] || [];
+      if (bk.length) cls += ' booked';
       if (key === today) cls += ' today';
       if (key === view.selected) cls += ' sel';
 
@@ -173,7 +191,8 @@
       }
       kids.push(el('div', { class: 'dnum' }, [
         el('b', { text: String(d.getDate()) }),
-        entries.length ? el('span', { class: 'more', text: entries.length + '' }) : null
+        entries.length ? el('span', { class: 'more', text: entries.length + '' }) : null,
+        bk.length ? bookedTag() : null
       ]));
       if (hol) kids.push(el('div', { class: 'holname', title: hol }, [I('holiday'), el('span', { text: hol })]));
 
@@ -183,7 +202,9 @@
 
       grid.appendChild(el('button', {
         class: cls, type: 'button', data: { date: key },
-        'aria-label': U.fmt(key) + (hol ? ', ' + hol : '') + (entries.length ? ', ' + entries.length + ' away or remote' : ''),
+        'aria-label': U.fmt(key) + (hol ? ', ' + hol : '') + (bk.length ? ', booked' : '') +
+          (entries.length ? ', ' + entries.length + ' away or remote' : ''),
+        title: bk.length ? bookedTitle(bk) : null,
         /* keyboard (detail 0) and touch taps select the day; mouse selection goes through the drag handler */
         onclick: function (e) { if (e.detail === 0 || touchTap) { touchTap = false; toggleDay(key); } }
       }, kids));
@@ -273,17 +294,21 @@
   }
 
   /* ---- phone: the month as a list of days that have something on ---- */
-  function agenda(index, year, mon) {
+  function agenda(index, year, mon, booked) {
     var list = el('div', { class: 'agenda' });
     var today = U.todayISO();
     var d = new Date(year, mon, 1), shown = 0;
     while (d.getMonth() === mon) {
-      var key = U.iso(d), entries = sorted(index[key]), hol = U.holidayName(key);
-      if (entries.length || hol || key === today) {
-        list.appendChild(el('div', { class: 'arow' + (key === today ? ' today' : '') + (hol ? ' hol' : '') }, [
+      var key = U.iso(d), entries = sorted(index[key]), hol = U.holidayName(key), bk = booked[key] || [];
+      if (entries.length || hol || bk.length || key === today) {
+        list.appendChild(el('div', {
+          class: 'arow' + (key === today ? ' today' : '') + (hol ? ' hol' : '') + (bk.length ? ' booked' : ''),
+          title: bk.length ? bookedTitle(bk) : null
+        }, [
           el('div', { class: 'adate' }, [el('span', { text: U.DOW[d.getDay()] }), el('b', { text: String(d.getDate()) })]),
           el('div', { class: 'achips' },
-            (hol ? [el('div', { class: 'holname' }, [I('holiday'), el('span', { text: hol })])] : [])
+            (bk.length ? [bookedTag()] : [])
+              .concat(hol ? [el('div', { class: 'holname' }, [I('holiday'), el('span', { text: hol })])] : [])
               .concat(entries.map(function (e) { return chip(e, true); }))
               .concat(!entries.length && !hol ? [el('div', { class: 'sub', text: 'Today — nobody away or remote' })] : []))
         ]));
@@ -303,6 +328,8 @@
         S.is('employee') ? el('span', {}, [el('b', { style: 'background:var(--leave)' }), I('leave'), 'Colleague on leave']) : null,
         el('span', {}, [el('b', { style: 'background:var(--wfh)' }), I('home'), 'Work from home']),
         el('span', {}, [I('holiday'), 'Public holiday']),
+        el('span', {}, [el('b', { class: 'booked-swatch' }),
+          S.is('employee') ? 'Booked — a teammate is on approved leave' : 'Booked — approved planned leave']),
         el('span', { style: 'color:var(--faint)', text: 'Dashed border = awaiting approval' }),
         el('span', { style: 'color:var(--faint)', text: '½AM / ½PM = half day' }),
         phone ? null : el('span', { class: 'hint', text: 'Tip: drag across days to apply for a range' })
