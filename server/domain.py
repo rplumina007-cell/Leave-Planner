@@ -302,9 +302,15 @@ def shares_team(viewer, emp_id, users):
 
 def can_see(viewer, emp_id, users):
     """Whether anything about someone reaches the viewer. Admin: everyone.
-    Everyone else: themselves and people sharing one of their teams - nothing at
-    all about anyone else."""
-    return viewer["role"] == "admin" or emp_id == viewer["emp_id"] or shares_team(viewer, emp_id, users)
+    Manager: themselves and people sharing one of their teams. Employee: the same,
+    but fellow employees only - managers' and admins' leave, WFH and names never
+    reach an employee. (People who only exist in the records have no role and
+    count as employees.) Nothing at all about anyone else."""
+    if viewer["role"] == "admin" or emp_id == viewer["emp_id"]:
+        return True
+    if viewer["role"] == "employee" and (users.get(emp_id) or {}).get("role") in ("manager", "admin"):
+        return False
+    return shares_team(viewer, emp_id, users)
 
 
 def sees_in_full(viewer, emp_id, users):
@@ -365,11 +371,12 @@ def can_file_for(viewer, emp_id, users):
 
 def can_delete(viewer, rec, users):
     """Admin: any record. Manager: any record of people they manage.
-    Everyone: withdraw their own request while it is still pending."""
+    Everyone: their own request while it is pending or approved (a declined one
+    stays as a record)."""
     if viewer["role"] == "admin":
         return True
     if rec.get("empId") == viewer["emp_id"]:
-        return rec.get("status") == "Pending"
+        return rec.get("status") in ("Pending", "Approved")
     return manages(viewer, rec.get("empId"), users)
 
 

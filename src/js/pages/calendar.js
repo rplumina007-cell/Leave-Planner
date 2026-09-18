@@ -374,7 +374,14 @@
                 el('div', { class: 'sub mono', text: U.fmtRange(e.rec.from, e.rec.to) + ' · ' + U.n1(e.rec.days) + 'd' }),
                 e.rec.comment ? el('div', { class: 'sub', style: 'font-style:italic', text: '“' + e.rec.comment + '”' }) : null
               ]),
-              el('span', { class: 'pill ' + e.rec.status, text: e.rec.status })
+              el('div', { style: 'display:flex;flex-direction:column;align-items:flex-end;gap:6px' }, [
+                el('span', { class: 'pill ' + e.rec.status, text: e.rec.status }),
+                e.rec.canDelete ? el('button', {
+                  class: 'btn sm', type: 'button', title: 'Delete this request',
+                  'aria-label': 'Delete ' + e.rec.name + '’s ' + (kind === 'wfh' ? 'WFH' : 'leave'),
+                  onclick: function () { removeRequest(e.rec, kind); }
+                }, e.rec.status === 'Pending' && e.rec.empId === S.me().empId ? [I('undo'), 'Withdraw'] : [I('x'), 'Delete']) : null
+              ])
             ]));
           });
         });
@@ -468,8 +475,9 @@
           ]),
           el('div', { style: 'display:flex;flex-direction:column;align-items:flex-end;gap:6px' }, [
             el('span', { class: 'pill ' + r.status, text: r.status }),
-            r.status === 'Pending' && r.canDelete
-              ? el('button', { class: 'btn sm', type: 'button', onclick: function () { withdraw(r); } }, [I('undo'), 'Withdraw'])
+            r.canDelete
+              ? el('button', { class: 'btn sm', type: 'button', onclick: function () { removeRequest(r, r.kind); } },
+                r.status === 'Pending' ? [I('undo'), 'Withdraw'] : [I('x'), 'Delete'])
               : null
           ])
         ]);
@@ -478,9 +486,18 @@
     ]);
   }
 
-  function withdraw(r) {
-    if (!confirm('Withdraw your ' + (r.kind === 'wfh' ? 'WFH' : 'leave') + ' request for ' + U.fmtRange(r.from, r.to) + '?')) return;
-    S.withdraw(r.kind, r.id).then(function (res) { if (res) U.toast('Request withdrawn'); });
+  /* Delete a request from the calendar: your own pending (withdraw) or approved
+     one, or - for managers and admins - one they're allowed to remove. The server
+     decides; the button only appears where it will say yes (rec.canDelete). */
+  function removeRequest(rec, kind) {
+    var own = rec.empId === S.me().empId;
+    var pending = rec.status === 'Pending';
+    var what = (kind === 'wfh' ? 'WFH' : 'leave') + ' for ' + U.fmtRange(rec.from, rec.to);
+    var msg = own
+      ? (pending ? 'Withdraw your ' + what + '?' : 'Delete your approved ' + what + '?\n\nIt will be removed from the calendar and the records.')
+      : 'Delete ' + rec.name + '’s ' + String(rec.status).toLowerCase() + ' ' + what + '?\n\nThis can’t be undone.';
+    if (!confirm(msg)) return;
+    S.withdraw(kind, rec.id).then(function (res) { if (res) U.toast(own && pending ? 'Request withdrawn' : 'Request deleted'); });
   }
 
   function statRow(icon, label, value, color) {

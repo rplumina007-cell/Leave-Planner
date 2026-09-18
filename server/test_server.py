@@ -186,7 +186,9 @@ def main():
     print("\n-- employee (E1, in Alpha)")
     s, st = e1.req("GET", "/api/state")
     seen = sorted(p["empId"] for p in st["people"])
-    check("employee sees only their team (M1 in Alpha, G1 in All Teams)", s == 200 and seen == ["E1", "G1", "M1"], seen)
+    check("employee sees fellow employees in their team only (G1 in All Teams; not manager M1)", s == 200 and seen == ["E1", "G1"], seen)
+    check("employee gets no records of their manager or any admin",
+          not [r for k in ("leave", "wfh") for r in st[k] if r["empId"] in ("M1", "M2", "A1")])
     check("employee gets no records for anyone outside their teams",
           not [r for k in ("leave", "wfh") for r in st[k] if r["empId"] not in seen])
     check("no audit, team or manager data for employee", "audit" not in st and "team" not in st and "teams" not in st)
@@ -234,12 +236,17 @@ def main():
     check("M2 can't decide E1 (not in M2's teams) or learn whose it is", s == 404 and "Eve" not in json.dumps(b), (s, b))
     check("M2 approves E2", decide(m2, e2_id)[0] == 200)
     check("M1 can decide E2 too (E2 -> M2 -> M1, shares Beta)", decide(m1, e2_id)[0] == 200)
+    check("employee deletes their own approved request", e2.req("POST", "/api/requests/delete", {"kind": "leave", "id": e2_id})[0] == 200)
+    check("the deletion is logged as a cancellation",
+          any(a["action"] == "cancelled (was approved)" and a["id"] == e2_id for a in admin.req("GET", "/api/state")[1]["audit"]))
     s, b = decide(m1, e5_id)
     check("M1 can't see or decide E5: reports to M1 but in another team", s == 404 and "Gia" not in json.dumps(b), (s, b))
     check("M1 declines E1 with note", m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})[0] == 200)
     s, b = decide(m1, e1_id, "Pending")
     back = [r for r in b.get("state", {}).get("leave", []) if r["id"] == e1_id]
     check("undoing a decline restores the requester's own comment", s == 200 and back and back[0]["comment"] == "", back)
+    m1.req("POST", "/api/requests/decide", {"kind": "leave", "id": e1_id, "status": "Declined", "note": "Clash"})
+    check("a declined request can't be deleted by its owner", e1.req("POST", "/api/requests/delete", {"kind": "leave", "id": e1_id})[0] == 403)
     s, st = m1.req("GET", "/api/state")
     seen = sorted(p["empId"] for p in st["people"])
     owners = {r["empId"] for k in ("leave", "wfh") for r in st[k]}
@@ -271,7 +278,10 @@ def main():
     print("\n-- All Teams (G1, an employee)")
     s, stg = g1.req("GET", "/api/state")
     g_seen = {p["empId"] for p in stg["people"]}
-    check("All Teams sees everyone, sheet-only people included", {"E1", "E2", "E5", "M1", "M2", "P001"} <= g_seen, sorted(g_seen))
+    check("All Teams employee sees every employee, sheet-only people included", {"E1", "E2", "E5", "P001"} <= g_seen, sorted(g_seen))
+    check("...but never managers or admins, even with All Teams",
+          not g_seen & {"M1", "M2", "A1"} and not [r for k in ("leave", "wfh") for r in stg[k] if r["empId"] in ("M1", "M2", "A1")],
+          sorted(g_seen & {"M1", "M2", "A1"}))
     others = [r for k in ("leave", "wfh") for r in stg[k] if r["empId"] != "G1"]
     check("...but as an employee still without teammates' reasons", others and all(r.get("redacted") and r["reason"] is None for r in others))
     check("a manager in specific teams doesn't get the full team list", "teams" not in m1.req("GET", "/api/state")[1])

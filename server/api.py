@@ -191,8 +191,10 @@ def delete_request(app, body, ctx):
         if not domain.can_delete(user, rec, users):
             raise ApiError(403, "Only an admin or %s's manager can delete this record" % rec["name"])
         st[kind] = [r for r in st[kind] if r is not rec]
-        own = rec.get("empId") == user["emp_id"] and rec.get("status") == "Pending"
-        domain.log(st, "withdrawn" if own else "deleted", kind, rec["id"], rec["name"], user["name"])
+        own = rec.get("empId") == user["emp_id"]
+        action = ("withdrawn" if rec.get("status") == "Pending" else "cancelled (was %s)" % rec.get("status", "").lower()) if own \
+            else "deleted (was %s)" % rec.get("status", "").lower()
+        domain.log(st, action, kind, rec["id"], rec["name"], user["name"])
     app.db.mutate(fn)
     return {"state": state_payload(app, user)}, []
 

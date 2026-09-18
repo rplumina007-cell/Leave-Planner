@@ -47,17 +47,19 @@ change their password later with the 🔑 button.
 
 | | Employee | Manager | Admin |
 | --- | --- | --- | --- |
-| Calendar | their teams — teammates' reasons/comments hidden | their teams, in full | everyone |
+| Calendar | fellow employees in their teams (never managers or admins) — reasons/comments hidden | their teams, in full | everyone |
 | Apply leave / WFH | for themselves | for themselves, and people they manage in their teams | for anyone, including people without a login |
 | Approvals | — | people they manage in their teams (never their own) | every request |
 | Dashboards, Register | — | their teams | everyone |
-| Delete records | withdraw own pending | people they manage in their teams; own pending | ✓ |
+| Delete records | own pending or approved | people they manage in their teams; own pending or approved | ✓ |
 | Settings (users, roles, teams, managers, dropdowns, cleanup, sheet sync) | — | — | ✓ |
 
 **Teams** decide who can see whom. An admin creates teams in **⚙ Settings →
 Teams** and gives each login one or more of them in **Users**. People see only
 those who share one of their teams — nothing at all about anyone else — and
 **All Teams** counts as every team. Someone with no team sees only themselves.
+Employees see fellow employees only: managers' and admins' leave, WFH and names
+never reach them, whatever the teams.
 
 **Team filter.** Admins, and managers in more than one team or in All Teams, get
 a **Team** filter on the Calendar, Approvals, Dashboards and Register; the choice
@@ -170,7 +172,7 @@ Either way, serve it over HTTPS (`--cert/--key`) before anyone else signs in.
 
 | Page | What it does |
 | --- | --- |
-| **Calendar** | Month of raised day tiles marking every day someone is on leave or WFH. Chips carry a colour **and** a shape, so they read without colour vision — **planned leave** ochre (calendar tick), **unplanned leave** wine (alert), **WFH** teal (house); a colleague's leave with details hidden shows a sun. The stripe across the top of each tile splits the same way. **Public holidays** are shaded and named. Days **already booked** get an ochre tint and a *Booked* tag — approved planned leave for managers and admins; for employees, any approved leave by a teammate, so the kind of leave stays private. Only the team filter affects the tint. A dashed border means still awaiting approval; `½AM` / `½PM` marks half days. Filter by team, member, type and status; click a day for the full roster, or **drag across days** to apply for that range. **My requests** lists your pending and upcoming requests, with **Withdraw** on pending ones. On a phone the month becomes a day-by-day list with a pinned Apply bar. |
+| **Calendar** | Month of raised day tiles marking every day someone is on leave or WFH. Chips carry a colour **and** a shape, so they read without colour vision — **planned leave** ochre (calendar tick), **unplanned leave** wine (alert), **WFH** teal (house); a colleague's leave with details hidden shows a sun. The stripe across the top of each tile splits the same way. **Public holidays** are shaded and named. Days **already booked** get an ochre tint and a *Booked* tag — approved planned leave for managers and admins; for employees, any approved leave by a teammate, so the kind of leave stays private. Only the team filter affects the tint. A dashed border means still awaiting approval; `½AM` / `½PM` marks half days. Filter by team, member, type and status; click a day for the full roster, or **drag across days** to apply for that range. **My requests** lists your pending and upcoming requests, with **Withdraw** on pending ones and **Delete** on approved ones; a day's detail panel has **Delete** on every request you're allowed to remove (your own pending or approved ones; managers and admins as in the table above). Declined requests stay as a record. On a phone the month becomes a day-by-day list with a pinned Apply bar. |
 | **Approvals** | The manager queue. Split first into **Pending approval** vs **Approved & declined**, and within each into separate **Leave** and **WFH** cards. Shows days of notice and flags teammates already off on the same dates. Decisions apply at once with **Undo** in the confirmation (history rows have Undo too); declining prompts for a note. **Approve N without clashes** approves every visible request that doesn't overlap anyone already approved off, re-checking each one just before approving. |
 | **Dashboards** | One-click ranges (**This month / This quarter / Year to date / All time**) or pick months. Three tabs on one page — **Leave**, **WFH** and **Combined**. All share a single filter window (date range, team, person, whether pending counts), so changing the scope carries across all three and they stay comparable. Each has its own KPI row. Combined carries off-site pressure, per-person and monthly leave-plus-WFH totals, the three-way time split, the leave-vs-WFH rate trend, and coverage risk. |
 | **Register** | The searchable, sortable equivalent of the sheet's Leave and WFH tabs, with CSV export. |
