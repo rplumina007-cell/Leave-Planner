@@ -131,8 +131,8 @@ Vercel function can't keep a database file between requests.
    No build settings are needed.
 2. In that project, *Storage* → create a **Neon** database and connect it to the
    project. That adds `DATABASE_URL` to its environment variables. Redeploy once.
-3. Copy your current data across. Put the Neon connection string in a git-ignored
-   `.env.local` file as `DATABASE_URL=...` (or run `vercel env pull`), then:
+3. Copy your current data across. Put the Neon connection string in a
+   `.env.local` file as `DATABASE_URL=...`, then:
 
    ```bash
    pip install "psycopg[binary]"
@@ -149,6 +149,12 @@ and HTTPS status from Vercel's own forwarding headers, marks the session cookie
 across every running instance. Manage live accounts from your computer with
 `python server/manage.py --live list-users` (or `reset-password`), which reads
 `.env.local`.
+
+**Where `.env.local` goes.** It holds live database credentials, so keep it out
+of any cloud-synced folder: the tools look first beside the local database, in
+`%LOCALAPPDATA%\WFSTracker\` (`~/.local/share/WFSTracker/` elsewhere), and only
+then in the project folder, which is where `vercel env pull` writes it. Either
+place works and both are git-ignored; the private folder is the safer one.
 
 On the free plan the first request after a quiet spell takes a few seconds while
 the function and the database wake up.
