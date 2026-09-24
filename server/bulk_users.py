@@ -88,13 +88,13 @@ def template_xlsx(teams):
         ("Full name — required. This is also their user name.", 0),
         ("Role — Employee, Manager, Senior manager or Admin (pick from the list). Blank means Employee.", 0),
         ("Manager employee ID — optional: an existing Manager, Senior manager or Admin, or someone added in this same sheet with one of those roles.", 0),
-        ("Teams — optional: one or more team names separated by commas, or All Teams. Teams must already exist in Settings → Teams.", 0),
+        ("Teams — optional: one or more team names separated by commas, or All Teams. A team that doesn't exist yet is created when you import (up to 40 characters; you'll see it in the preview first).", 0),
         ("One-time password — optional: at least 10 characters, not a common password, and not containing the person's name or ID. Leave blank to have one generated.", 0),
         ("Everyone signs in with their employee ID and chooses their own password at first sign-in.", 0),
         ("Save as .xlsx (or .csv), then choose the file in Settings → Users. You'll see a preview before anything is created.", 0),
         ("", 0),
         ("Teams that exist right now:", 2),
-    ] + [("  " + t, 0) for t in teams or []] + ([("  (none yet — create them in Settings → Teams)", 0)] if not teams else [])
+    ] + [("  " + t, 0) for t in teams or []] + ([("  (none yet — name new ones in the Teams column and they'll be created)", 0)] if not teams else [])
     rows = "".join('<row r="%d">%s</row>' % (i + 1, _cell("A%d" % (i + 1), text, style) if text else "")
                    for i, (text, style) in enumerate(lines))
     guide = (head + '<worksheet xmlns="%s"><cols><col min="1" max="1" width="120" customWidth="1"/></cols>' % MAIN_NS +
@@ -300,8 +300,11 @@ def _records(grid):
 def plan(rows, users, known_teams):
     """Check every row against the rules for a single login, plus the file as a
     whole (duplicate IDs; managers defined in the same file). Each result has
-    an "errors" list - empty means it's ready to create."""
+    an "errors" list - empty means it's ready to create - and "newTeams": teams
+    it names that don't exist yet, which are created with it. A new team keeps
+    the spelling it first appears with; later rows match it in any case."""
     by_lower = {t.lower(): t for t in known_teams}
+    new_lower = set()
     out, seen = [], {}
     for r in rows:
         errs = []
@@ -320,27 +323,37 @@ def plan(rows, users, known_teams):
             seen[emp] = r["row"]
         if not 2 <= len(name) <= 80:
             errs.append("Enter the full name")
-        teams, unknown = [], []
+        teams, new_here, too_long = [], [], []
         for part in re.split(r"[,;]", r["teams"]):
             t = " ".join(part.split())
             if not t:
                 continue
-            if t.lower() == domain.ALL_TEAMS.lower():
+            low = t.lower()
+            if low == domain.ALL_TEAMS.lower():
                 teams.append(domain.ALL_TEAMS)
-            elif t.lower() in by_lower:
-                teams.append(by_lower[t.lower()])
-            else:
-                unknown.append(t)
-        if unknown:
-            errs.append("Unknown team%s: %s — create %s in Settings → Teams first" % (
-                "s" if len(unknown) > 1 else "", ", ".join(unknown), "them" if len(unknown) > 1 else "it"))
-        teams = [domain.ALL_TEAMS] if domain.ALL_TEAMS in teams else list(dict.fromkeys(teams))
+            elif low in by_lower:
+                teams.append(by_lower[low])
+                if low in new_lower:
+                    new_here.append(by_lower[low])
+            elif len(t) > 40:
+                too_long.append(t)
+            else:                                   # a new team, created with this row
+                by_lower[low] = t
+                new_lower.add(low)
+                teams.append(t)
+                new_here.append(t)
+        if too_long:
+            errs.append("Team name%s longer than 40 characters: %s" % ("s" if len(too_long) > 1 else "", ", ".join(too_long)))
+        if domain.ALL_TEAMS in teams:               # All Teams already covers every team
+            teams, new_here = [domain.ALL_TEAMS], []
+        else:
+            teams, new_here = list(dict.fromkeys(teams)), list(dict.fromkeys(new_here))
         if r["password"]:
             problem = security.password_problem(r["password"], emp, name)
             if problem:
                 errs.append(problem)
         out.append({"row": r["row"], "empId": emp, "name": name, "role": role or "", "senior": senior,
-                    "manager": r["manager"], "teams": teams, "password": r["password"], "errors": errs})
+                    "manager": r["manager"], "teams": teams, "newTeams": new_here, "password": r["password"], "errors": errs})
 
     in_file = {p["empId"]: p for p in out}
     for p in out:
@@ -372,9 +385,29 @@ def temp_password(emp_id, name):
             return pw
 
 
-def create(db, ready):
-    """Create the rows that passed, then link managers once everyone exists.
-    Each created row gets a oneTimePassword - given in the file, or generated."""
+def new_teams(rows):
+    """New teams named by these rows, first spelling first, no repeats."""
+    return list(dict.fromkeys(t for p in rows for t in p.get("newTeams", [])))
+
+
+def create(db, ready, actor=""):
+    """Create the teams the ready rows introduce, then the rows, then link
+    managers once everyone exists. Each created row gets a oneTimePassword -
+    given in the file, or generated. Returns (created rows, created teams)."""
+    wanted, made_teams = new_teams(ready), []
+    if wanted:
+        def add_teams(st):
+            for t in wanted:
+                if t.lower() in {x.lower() for x in st.get("teams", [])}:
+                    continue                          # appeared since the preview
+                domain.add_team(st, t)
+                made_teams.append(t)
+            if made_teams:
+                domain.log(st, "teams created by import (%d)" % len(made_teams), "teams", "", ", ".join(made_teams)[:200], actor)
+        db.mutate(add_teams)
+        canon = {t.lower(): t for t in db.read_state().get("teams", [])}
+        for p in ready:                               # match whatever spelling is stored now
+            p["teams"] = [t if t == domain.ALL_TEAMS else canon.get(t.lower(), t) for t in p["teams"]]
     done = []
     for p in ready:
         pw = p["password"] or temp_password(p["empId"], p["name"])
@@ -391,4 +424,4 @@ def create(db, ready):
                 db.update_user(p["empId"], manager_emp_id=p["manager"])
             else:
                 p["errors"].append("Created without a manager — %s wasn't created" % p["manager"])
-    return done
+    return done, made_teams

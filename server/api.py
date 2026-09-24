@@ -355,6 +355,7 @@ def template_file(app, ctx):
 def _import_row(p):
     return {"row": p["row"], "empId": p["empId"], "name": p["name"],
             "role": "senior_manager" if p["senior"] else p["role"], "manager": p["manager"], "teams": p["teams"],
+            "newTeams": p.get("newTeams", []),
             "passwordGiven": bool(p["password"]), "errors": p["errors"],
             "created": bool(p.get("created")), "oneTimePassword": p.get("oneTimePassword")}
 
@@ -377,11 +378,12 @@ def import_users(app, body, ctx):
     plan = bulk_users.plan(rows, app.db.users(), app.db.read_state().get("teams", []))
     ready = [p for p in plan if not p["errors"]]
     if not body.get("commit"):
-        return {"rows": [_import_row(p) for p in plan], "ready": len(ready)}, []
-    done = bulk_users.create(app.db, ready)
+        return {"rows": [_import_row(p) for p in plan], "ready": len(ready), "newTeams": bulk_users.new_teams(ready)}, []
+    done, made_teams = bulk_users.create(app.db, ready, admin["name"])
     if done:
         app.db.mutate(lambda st: domain.log(st, "logins imported (%d)" % len(done), "users", "", filename, admin["name"]))
-    return {"rows": [_import_row(p) for p in plan], "created": len(done), "state": state_payload(app, admin)}, []
+    return {"rows": [_import_row(p) for p in plan], "created": len(done), "createdTeams": made_teams,
+            "state": state_payload(app, admin)}, []
 
 
 # ------------------------------------------------------------------ public holidays (admin)

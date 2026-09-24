@@ -368,7 +368,7 @@
         if (f.size > 2 * 1024 * 1024) { errBox(err, 'Files up to 2 MB, please — split larger lists.'); return; }
         importFile = f;
         send(false).then(function (r) {
-          view.importResult = { rows: r.rows, ready: r.ready, committed: false, filename: f.name };
+          view.importResult = { rows: r.rows, ready: r.ready, newTeams: r.newTeams || [], committed: false, filename: f.name };
           W.app.rerender();
         }, function (e2) { importFile = null; errBox(err, e2.message); });
       }
@@ -376,12 +376,17 @@
     function clear() { view.importResult = null; importFile = null; W.app.rerender(); }
     function commit() {
       if (!importFile) { errBox(err, 'Choose the file again, then create.'); return; }
-      if (!confirm('Create ' + res.ready + ' login' + (res.ready === 1 ? '' : 's') + ' from ' + res.filename + '?')) return;
+      var nt = res.newTeams.length;
+      if (!confirm('Create ' + res.ready + ' login' + (res.ready === 1 ? '' : 's') +
+        (nt ? ' and ' + nt + ' new team' + (nt === 1 ? '' : 's') + ' (' + res.newTeams.join(', ') + ')' : '') +
+        ' from ' + res.filename + '?')) return;
       send(true).then(function (r) {
         importFile = null;
-        view.importResult = { rows: r.rows, created: r.created, committed: true, filename: res.filename };
+        var ct = r.createdTeams || [];
+        view.importResult = { rows: r.rows, created: r.created, createdTeams: ct, committed: true, filename: res.filename };
         W.app.rerender();
-        U.toast(r.created + ' login' + (r.created === 1 ? '' : 's') + ' created');
+        U.toast(r.created + ' login' + (r.created === 1 ? '' : 's') + ' created' +
+          (ct.length ? ' · ' + ct.length + ' new team' + (ct.length === 1 ? '' : 's') : ''));
       }, function (e2) { errBox(err, e2.message); });
     }
     function savePasswords() {
@@ -399,7 +404,8 @@
       ]),
       el('div', {
         class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column — then choose the file. ' +
-          'Every row is checked first; nothing is created until you confirm. Up to 500 people per file (.xlsx or .csv).'
+          'Teams that don’t exist yet are created too. Every row is checked first; nothing is created until you confirm. ' +
+          'Up to 500 people per file (.xlsx or .csv).'
       }),
       res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in template', input]),
       err
@@ -417,6 +423,11 @@
           [I('download'), 'Download one-time passwords']) : null,
         el('button', { class: 'btn sm', type: 'button', text: res.committed ? 'Done' : 'Clear', onclick: clear })
       ]));
+      var teamNote = !res.committed && res.newTeams && res.newTeams.length ? 'New teams that will be created: ' + res.newTeams.join(', ')
+        : res.committed && res.createdTeams && res.createdTeams.length ? 'Teams created: ' + res.createdTeams.join(', ') : '';
+      if (teamNote) {
+        body.push(el('div', { class: 'sub', style: 'font-size:12.5px;display:flex;gap:6px;align-items:center;font-weight:600' }, [I('team'), teamNote]));
+      }
       if (res.committed && res.created) {
         body.push(el('div', {
           class: 'sub', style: 'font-size:12px;color:var(--warn);font-weight:600', text: 'One-time passwords are shown only now. Give each person theirs ' +
@@ -445,7 +456,11 @@
             el('td', { text: p.name || '—' }),
             el('td', { text: p.role ? roleLabel(p.role) : '—' }),
             el('td', { class: 'mono', text: p.manager || '—' }),
-            el('td', { text: p.teams.length ? p.teams.join(', ') : '—' }),
+            el('td', {
+              text: p.teams.length ? p.teams.map(function (t) {
+                return t + (!res.committed && (p.newTeams || []).indexOf(t) !== -1 ? ' (new)' : '');
+              }).join(', ') : '—'
+            }),
             el('td', {}, status),
             res.committed ? el('td', { class: 'mono', text: p.oneTimePassword || '' }) : null
           ]);

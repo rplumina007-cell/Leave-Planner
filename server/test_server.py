@@ -409,22 +409,29 @@ def main():
                   ["N4", "Quinn Quiet", "Chief", "", "", ""],
                   ["N5", "Rae Remote", "Employee", "", "Nowhere", ""],
                   ["N6", "Sam Simple", "Employee", "", "", "password123"],
-                  ["N7", "Tia Twin", "Employee", "", "", ""],
+                  ["N7", "Tia Twin", "Employee", "", "nowhere", ""],
                   ["N7", "Tia Again", "Employee", "", "", ""],
-                  ["N8", "Uma Unknown", "Employee", "ZZ9", "", ""]]
+                  ["N8", "Uma Unknown", "Employee", "ZZ9", "", ""],
+                  ["N9", "Vic Verylong", "Employee", "", "X" * 41, ""]]
     book = xlsx_bytes(sheet_rows)
     s, b = imp(admin, book)
     errs = {r["empId"] + "@" + str(r["row"]): r["errors"] for r in b.get("rows", [])}
     check("preview marks exactly the good rows ready (IDs typed as numbers included)",
-          s == 200 and b.get("ready") == 4 and not any(errs.get(k) for k in ("9001@2", "N2@3", "N3@4", "N7@9")), b)
-    check("preview explains every problem row (existing ID, bad role, unknown team, weak password, duplicate, unknown manager)",
-          all(errs.get(k) for k in ("E1@5", "N4@6", "N5@7", "N6@8", "N7@10", "N8@11")), errs)
-    check("preview creates nothing", "9001" not in {u["empId"] for u in admin.req("GET", "/api/state")[1]["team"]})
+          s == 200 and b.get("ready") == 5 and not any(errs.get(k) for k in ("9001@2", "N2@3", "N3@4", "N5@7", "N7@9")), b)
+    check("preview lists a new team once, with its first spelling", b.get("newTeams") == ["Nowhere"], b.get("newTeams"))
+    check("preview explains every problem row (existing ID, bad role, weak password, duplicate, unknown manager, long team name)",
+          all(errs.get(k) for k in ("E1@5", "N4@6", "N6@8", "N7@10", "N8@11", "N9@12")), errs)
+    st_now = admin.req("GET", "/api/state")[1]
+    check("preview creates nothing - no logins, no teams",
+          "9001" not in {u["empId"] for u in st_now["team"]} and "Nowhere" not in st_now.get("teams", []))
     check("non-admins can't import", imp(e5, book)[0] == 403)
     s, b = imp(admin, book, commit=True)
     made = {r["empId"]: r for r in b.get("rows", []) if r.get("created")}
-    check("import creates only the rows that passed", s == 200 and b.get("created") == 4 and sorted(made) == ["9001", "N2", "N3", "N7"],
+    check("import creates only the rows that passed", s == 200 and b.get("created") == 5 and sorted(made) == ["9001", "N2", "N3", "N5", "N7"],
           (s, b.get("created"), sorted(made)))
+    check("import creates the new team, and both spellings land in it",
+          b.get("createdTeams") == ["Nowhere"] and "Nowhere" in b["state"].get("teams", [])
+          and [u["teams"] for u in b["state"]["team"] if u["empId"] in ("N5", "N7")] == [["Nowhere"], ["Nowhere"]], b.get("createdTeams"))
     people = {u["empId"]: u for u in b.get("state", {}).get("team", [])}
     check("imported people get their role, teams and manager (incl. a manager from the same file)",
           people.get("9001", {}).get("managerEmpId") == "M1" and people.get("9001", {}).get("teams") == ["Alpha"]
