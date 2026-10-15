@@ -149,6 +149,9 @@
 }
 
 *{box-sizing:border-box}
+/* The hidden attribute must win: a class that sets display (.caps, .bulkbar...)
+   otherwise beats the browser's own [hidden] rule and the element stays on screen. */
+[hidden]{display:none!important}
 
 /* Ambient warm light — fixed, so cards drift over it as you scroll. */
 body{
