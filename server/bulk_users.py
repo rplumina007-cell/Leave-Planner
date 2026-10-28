@@ -299,7 +299,8 @@ def _records(grid):
 # ---------------------------------------------------------------- checking and creating
 def plan(rows, users, known_teams):
     """Check every row against the rules for a single login, plus the file as a
-    whole (duplicate IDs; managers defined in the same file). Each result has
+    whole (duplicate IDs; managers defined in the same file). All Teams may be
+    listed alongside named teams. Each result has
     an "errors" list - empty means it's ready to create - and "newTeams": teams
     it names that don't exist yet, which are created with it. A new team keeps
     the spelling it first appears with; later rows match it in any case."""
@@ -344,10 +345,7 @@ def plan(rows, users, known_teams):
                 new_here.append(t)
         if too_long:
             errs.append("Team name%s longer than 40 characters: %s" % ("s" if len(too_long) > 1 else "", ", ".join(too_long)))
-        if domain.ALL_TEAMS in teams:               # All Teams already covers every team
-            teams, new_here = [domain.ALL_TEAMS], []
-        else:
-            teams, new_here = list(dict.fromkeys(teams)), list(dict.fromkeys(new_here))
+        teams, new_here = list(dict.fromkeys(teams)), list(dict.fromkeys(new_here))
         if r["password"]:
             problem = security.password_problem(r["password"], emp, name)
             if problem:

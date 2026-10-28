@@ -198,7 +198,7 @@ def main():
     check("create employee E1 under M1, in Alpha", mk("E1", "Eve Employee", "employee", "M1", ["Alpha"])[0] == 200)
     check("create employee E2 under M2, in Beta", mk("E2", "Eli Employee", "employee", "M2", ["Beta"])[0] == 200)
     check("create employee E5 under M1 but in Gamma", mk("E5", "Gia Gamma", "employee", "M1", ["Gamma"])[0] == 200)
-    check("create employee G1 in All Teams", mk("G1", "Gus Global", "employee", None, ["All Teams", "Alpha"])[0] == 200)
+    check("create employee G1 in All Teams", mk("G1", "Gus Global", "employee", None, ["All Teams"])[0] == 200)
     check("unknown team refused", mk("E6", "Uma Unknown", "employee", None, ["Nope"])[0] == 400)
     check("duplicate employee ID refused", mk("E1", "Someone Else", "employee")[0] == 409)
     check("employee can't be assigned as a manager", mk("E3", "Ezra Employee", "employee", "E1")[0] == 400)
@@ -209,7 +209,7 @@ def main():
             "empId": "E7", "name": "Ivy Wren", "role": "employee", "password": weak})[0] == 400)
     _, ast = admin.req("GET", "/api/state")
     check("admin sees the team list", ast.get("teams") == ["Alpha", "Beta", "Gamma"], ast.get("teams"))
-    check("All Teams is stored on its own", [u["teams"] for u in ast["team"] if u["empId"] == "G1"] == [["All Teams"]])
+    check("All Teams can be held on its own", [u["teams"] for u in ast["team"] if u["empId"] == "G1"] == [["All Teams"]])
 
     e1, e2, m1, m2, e5, g1 = (Client(port) for _ in range(6))
     for c, emp, pw in ((e1, "E1", "Harbor-Lamp-11"), (e2, "E2", "Copper-Gate-22"), (m1, "M1", "Silver-Pine-33"),
@@ -321,6 +321,30 @@ def main():
           sorted(g_seen & {"M1", "M2", "A1"}))
     others = [r for k in ("leave", "wfh") for r in stg[k] if r["empId"] != "G1"]
     check("...but as an employee still without teammates' reasons", others and all(r.get("redacted") and r["reason"] is None for r in others))
+    print("\n-- All Teams together with named teams")
+    teams_of = lambda emp: [u["teams"] for u in admin.req("GET", "/api/state")[1]["team"] if u["empId"] == emp][0]
+    check("create employee G2 in All Teams and Alpha", mk("G2", "Gail Both", "employee", None, ["All Teams", "Alpha"])[0] == 200)
+    check("both are kept - the named team is no longer dropped", teams_of("G2") == ["All Teams", "Alpha"], teams_of("G2"))
+    g2 = Client(port)
+    check("G2 replaces one-time password", g2.ready("G2", "Start-Here-2026", "Willow-Crane-77")[0] == 200)
+    check("G2 still sees everyone, as All Teams gives",
+          {"E1", "E2", "E5", "P001"} <= {p["empId"] for p in g2.req("GET", "/api/state")[1]["people"]})
+    check("and is now visible to their own team: E1 in Alpha sees G2",
+          "G2" in {p["empId"] for p in e1.req("GET", "/api/state")[1]["people"]})
+    check("but not to a team they are not in: E2 in Beta doesn't see G2",
+          "G2" not in {p["empId"] for p in e2.req("GET", "/api/state")[1]["people"]})
+    check("an existing person can be given All Teams alongside their teams",
+          admin.req("POST", "/api/users/update", {"empId": "E5", "teams": ["All Teams", "Gamma"]})[0] == 200
+          and teams_of("E5") == ["All Teams", "Gamma"], teams_of("E5"))
+    admin.req("POST", "/api/users/update", {"empId": "E5", "teams": ["Gamma"]})
+    check("duplicates are folded away", admin.req("POST", "/api/users/update", {
+        "empId": "G2", "teams": ["All Teams", "Alpha", "All Teams"]})[0] == 200
+        and teams_of("G2") == ["All Teams", "Alpha"], teams_of("G2"))
+    check("an unknown team is still refused alongside All Teams",
+          admin.req("POST", "/api/users/update", {"empId": "G2", "teams": ["All Teams", "Nope"]})[0] == 400)
+    check("removing the named team leaves All Teams in place",
+          admin.req("POST", "/api/users/update", {"empId": "G2", "teams": ["All Teams"]})[0] == 200
+          and teams_of("G2") == ["All Teams"])
     check("a manager in specific teams doesn't get the full team list", "teams" not in m1.req("GET", "/api/state")[1])
     admin.req("POST", "/api/users/update", {"empId": "M1", "teams": ["All Teams"]})
     check("a manager in All Teams gets the team list (team filter choices)",
@@ -440,6 +464,9 @@ def main():
     check("a one-time password given in the file is used", made.get("N2", {}).get("oneTimePassword") == "Harbor-Quartz-88")
     s, b = Client(port).login("9001", made.get("9001", {}).get("oneTimePassword") or "x")
     check("an imported person signs in with the generated password and must change it", s == 200 and b["user"]["mustChange"], b)
+    s, b = imp(admin, b'Employee ID,Full name,Teams\r\nW1,Wide Access,All Teams; Alpha\r\n', "wide.csv")
+    check("a file may give All Teams alongside a named team",
+          s == 200 and b.get("ready") == 1 and b["rows"][0]["teams"] == ["All Teams", "Alpha"], b.get("rows"))
     s, b = imp(admin, b"Employee ID,Full name\r\nC1,Carl Csv\r\n", "people.csv")
     check("a .csv file works too", s == 200 and b.get("ready") == 1, b)
     many = ("Employee ID,Full name\n" + "".join("X%d,Xavier Person\n" % i for i in range(501))).encode()

@@ -228,7 +228,9 @@ def _check_manager(app, manager_emp_id, emp_id):
 
 
 def _check_teams(app, teams):
-    """A clean list of existing team names. All Teams on its own stands for every team."""
+    """A clean list of existing team names. All Teams means "sees everyone"; it can
+    be held alongside named teams, which is what puts its holder on those teams'
+    calendars - All Teams alone never makes anyone visible to others."""
     if teams is None:
         return []
     if not isinstance(teams, list) or not all(isinstance(t, str) for t in teams):
@@ -239,7 +241,7 @@ def _check_teams(app, teams):
             raise ApiError(400, 'Unknown team "%s"' % t)
         if t not in out:
             out.append(t)
-    return [domain.ALL_TEAMS] if domain.ALL_TEAMS in out else out
+    return out
 
 
 def create_user(app, body, ctx):

@@ -58,17 +58,19 @@ change their password later with the 🔑 button.
 Teams** and gives each login one or more of them in **Users**. People see only
 those who share one of their teams — nothing at all about anyone else — and
 **All Teams** lets its holder see everyone — but it never makes the holder visible
-to others: people only ever see someone they share a *named* team with. Someone
-with no team sees only themselves.
+to others: people only ever see someone they share a *named* team with. It can be
+given alongside named teams, which is how someone who sees everything still shows
+up on their own team's calendar and register. Someone with no team sees only
+themselves.
 Employees see fellow employees only: managers' and admins' leave, WFH and names
 never reach them, whatever the teams.
 
 **Team filter.** Admins, and managers in more than one team or in All Teams, get
 a **Team** filter on the Calendar, Approvals, Dashboards and Register; the choice
-carries from page to page. It counts people explicitly in a team (people in All
-Teams show only under "All teams"), and **No team** — for admins and All Teams
-managers — covers everyone without one, including people who only exist in the
-records.
+carries from page to page. It counts people explicitly in a team (someone in All
+Teams shows under a named team only if they are also in it), and **No team** —
+for admins and All Teams managers — covers everyone without one, including
+people who only exist in the records.
 
 **Managers** act — apply on someone's behalf, approve or decline, delete — only
 for people below them in the reporting chain (people assigned to them, to the

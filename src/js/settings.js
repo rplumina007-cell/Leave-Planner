@@ -50,28 +50,33 @@
   }
   function errBox(box, msg) { U.clear(box); box.appendChild(el('div', { class: 'err', text: msg })); }
 
-  /* Checkboxes for All Teams plus every team the admin created. All Teams already
-     covers every team, so ticking it greys the rest out. */
+  /* Checkboxes for All Teams plus every team the admin created. The two do
+     different jobs and can be ticked together: All Teams is what this person
+     sees, a named team is where they appear for everyone else. */
   function teamChecks(selected) {
     var names = [S.ALL_TEAMS].concat(S.state.teams || []);
     var boxes = names.map(function (t) {
       return el('input', { type: 'checkbox', value: t, checked: selected.indexOf(t) !== -1 || null });
     });
+    var note = el('div', { class: 'sub', style: 'font-size:12px;flex-basis:100%;margin:0' });
     function sync() {
-      boxes.slice(1).forEach(function (b) { b.disabled = boxes[0].checked; });
+      var named = boxes.slice(1).filter(function (b) { return b.checked; }).length;
+      note.textContent = !boxes[0].checked ? ''
+        : named ? 'Sees everyone, and appears on the calendar and register of the ticked team'
+          + (named === 1 ? '' : 's') + '.'
+          : 'Sees everyone. Tick a team as well to appear for its members — on its own, All Teams keeps this person hidden from others.';
     }
     boxes.forEach(function (b) { b.addEventListener('change', sync); });
     sync();
     return {
       node: el('div', { class: 'row', style: 'gap:6px 16px' }, names.map(function (t, i) {
         return el('label', { class: 'row', style: 'gap:6px;flex-wrap:nowrap;font-size:12.5px;font-weight:600;cursor:pointer' },
-          [boxes[i], i ? t : 'All Teams — everyone']);
-      }).concat(names.length > 1 ? [] : [
+          [boxes[i], i ? t : 'All Teams — sees everyone']);
+      }).concat(names.length > 1 ? [note] : [
         el('span', { class: 'sub', style: 'font-size:12px', text: 'Create teams in the Teams tab.' })
       ])),
       value: function () {
-        return boxes[0].checked ? [S.ALL_TEAMS]
-          : boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+        return boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
       }
     };
   }
@@ -153,8 +158,7 @@
       var todo = pickedIds().map(function (id) { return byId[id]; }).filter(Boolean).map(function (u) {
         var cur = (u.teams || []).slice(), next;
         if (mode === 'add') {
-          next = teamName === S.ALL_TEAMS ? [S.ALL_TEAMS]
-            : cur.indexOf(S.ALL_TEAMS) !== -1 || cur.indexOf(teamName) !== -1 ? cur : cur.concat([teamName]);
+          next = cur.indexOf(teamName) !== -1 ? cur : cur.concat([teamName]);
         } else {
           next = cur.filter(function (t) { return t !== teamName; });
         }
@@ -510,7 +514,10 @@
     box.appendChild(el('div', { class: 'box' }, [
       el('div', { class: 'card-h' }, [el('h3', { text: 'Teams — ' + u.name })]),
       el('div', { class: 'card-b', style: 'display:grid;gap:12px' }, [
-        el('div', { class: 'sub', text: u.name + ' will see only people who share one of these teams. All Teams gives access to everyone.' }),
+        el('div', {
+          class: 'sub', text: u.name + ' will see only people who share one of these teams. All Teams gives access to ' +
+            'everyone, and can be ticked together with the teams they belong to.'
+        }),
         pick.node
       ]),
       el('div', { class: 'card-h', style: 'border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end' }, [
@@ -554,7 +561,7 @@
         class: 'sub', text: 'People see only those who share one of their teams — managers in full, employees as dates ' +
           'without reasons. Someone with no team sees only themselves; admins always see everyone. Assign teams in Users.'
       }),
-      el('div', {}, [line(S.ALL_TEAMS, true, 'members see everyone; it never makes them visible to others', null)].concat(teams.map(function (t) {
+      el('div', {}, [line(S.ALL_TEAMS, true, 'members see everyone; tick a named team as well to make them visible to its members', null)].concat(teams.map(function (t) {
         return line(t, false, '', el('button', {
           class: 'btn bad sm', type: 'button', text: 'Remove', onclick: function () {
             var n = members(t).length;

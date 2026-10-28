@@ -3,7 +3,8 @@
    Offered to admins, and to managers who see more than one team (several teams,
    or All Teams). The choice carries from page to page. The server has already
    limited what reaches this user - the filter only narrows it further. It counts
-   people explicitly in a team, so All Teams members appear only under "all". */
+   people explicitly in a team: an All Teams member shows up under a named team
+   only when they are also in it, and otherwise only under "all". */
 (function (W) {
   'use strict';
   var U = W.util, S = W.store, el = U.el;
