@@ -35,7 +35,7 @@ COLUMNS = [
     ("role", "Role", 18),
     ("manager", "Manager employee ID", 22),
     ("teams", "Teams", 32),
-    ("email", "Email (optional)", 32),
+    ("email", "Email", 32),
     ("password", "One-time password (optional)", 30),
 ]
 EMAIL_COLUMNS = [
@@ -123,7 +123,7 @@ def template_xlsx(teams):
         ("Role — Employee, Manager, Senior manager or Admin (pick from the list). Blank means Employee.", 0),
         ("Manager employee ID — optional: an existing Manager, Senior manager or Admin, or someone added in this same sheet with one of those roles.", 0),
         ("Teams — optional: one or more team names separated by commas, or All Teams. A team that doesn't exist yet is created when you import (up to 40 characters; you'll see it in the preview first).", 0),
-        ("Email — optional: where their password reset codes go, so they can reset a forgotten password themselves. Each address can belong to one login only.", 0),
+        ("Email — required: where their password reset codes go, so they can reset a forgotten password themselves. Each address can belong to one login only.", 0),
         ("One-time password — optional: at least 10 characters, not a common password, and not containing the person's name or ID. Leave blank to have one generated.", 0),
         ("Everyone signs in with their employee ID and chooses their own password at first sign-in.", 0),
         ("Save as .xlsx (or .csv), then choose the file in Settings → Users. You'll see a preview before anything is created.", 0),
@@ -207,9 +207,11 @@ def _workbook(first_sheet, data_xml, guide_xml):
 
 # ---------------------------------------------------------------- reading a file back
 def read_rows(filename, raw):
-    """[{row, empId, name, role, manager, teams, email, password}] from an .xlsx or .csv."""
-    return _records(_grid(raw), ALIASES, ("empId", "name"),
-                    "Couldn't find the Employee ID and Full name columns — start from the template")
+    """[{row, empId, name, role, manager, teams, email, password}] from an .xlsx or .csv.
+    Email is required for every new login, so a file without that column is
+    refused as a whole - most likely a template downloaded before it existed."""
+    return _records(_grid(raw), ALIASES, ("empId", "name", "email"),
+                    "Couldn't find the Employee ID, Full name and Email columns — download the latest template and start from that")
 
 
 def read_email_rows(filename, raw):
@@ -423,6 +425,8 @@ def plan(rows, users, known_teams):
             if problem:
                 errs.append(problem)
         email = _email_cell(r.get("email", ""), errs)
+        if not r.get("email", "").strip():
+            errs.append("Enter their email address — it's needed for password reset codes")
         if email:
             owner = domain.email_owner(users, email)
             if owner:

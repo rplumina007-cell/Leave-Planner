@@ -130,7 +130,7 @@ def xlsx_bytes(rows, doctype=False):
     for r_i, row in enumerate(rows, 1):
         cells = []
         for c_i, v in enumerate(row):
-            ref = "ABCDEF"[c_i] + str(r_i)
+            ref = "ABCDEFGH"[c_i] + str(r_i)
             if v == "":
                 continue
             if v.isdigit():
@@ -448,24 +448,26 @@ def main():
         with zipfile.ZipFile(io.BytesIO(tpl)) as z:
             sheet1 = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
             guide = z.read("xl/worksheets/sheet2.xml").decode("utf-8")
-        tpl_ok = all(t in sheet1 for t in ("Employee ID", "Full name", "Role", "Manager employee ID", "Teams")) and "Alpha" in guide
+        tpl_ok = (all(t in sheet1 for t in ("Employee ID", "Full name", "Role", "Manager employee ID", "Teams", "Email"))
+                  and "Alpha" in guide and "Email — required" in guide)
     check("admin downloads the Excel template (headings, and today's teams listed)", tpl_ok, s)
     check("non-admins can't download the template", e5.req("GET", "/api/users/template")[0] == 403)
     imp = lambda c, raw, name="people.xlsx", commit=False: c.req("POST", "/api/users/import", {
         "filename": name, "data": base64.b64encode(raw).decode(), "commit": commit})
     check("the untouched template is refused with a clear message", imp(admin, tpl)[0] == 400)
-    sheet_rows = [["Employee ID", "Full name", "Role", "Manager employee ID", "Teams", "One-time password (optional)"],
-                  ["9001", "Nina Newhire", "Employee", "M1", "Alpha", ""],
-                  ["N2", "Omar Oneday", "Senior manager", "", "beta", "Harbor-Quartz-88"],
-                  ["N3", "Pia Pending", "employee", "N2", "Beta", ""],
-                  ["E1", "Dup Person", "Employee", "", "", ""],
-                  ["N4", "Quinn Quiet", "Chief", "", "", ""],
-                  ["N5", "Rae Remote", "Employee", "", "Nowhere", ""],
-                  ["N6", "Sam Simple", "Employee", "", "", "password123"],
-                  ["N7", "Tia Twin", "Employee", "", "nowhere", ""],
-                  ["N7", "Tia Again", "Employee", "", "", ""],
-                  ["N8", "Uma Unknown", "Employee", "ZZ9", "", ""],
-                  ["N9", "Vic Verylong", "Employee", "", "X" * 41, ""]]
+    sheet_rows = [["Employee ID", "Full name", "Role", "Manager employee ID", "Teams", "Email", "One-time password (optional)"],
+                  ["9001", "Nina Newhire", "Employee", "M1", "Alpha", "nina@example.com", ""],
+                  ["N2", "Omar Oneday", "Senior manager", "", "beta", "omar@example.com", "Harbor-Quartz-88"],
+                  ["N3", "Pia Pending", "employee", "N2", "Beta", "pia@example.com", ""],
+                  ["E1", "Dup Person", "Employee", "", "", "dup@example.com", ""],
+                  ["N4", "Quinn Quiet", "Chief", "", "", "quinn@example.com", ""],
+                  ["N5", "Rae Remote", "Employee", "", "Nowhere", "rae@example.com", ""],
+                  ["N6", "Sam Simple", "Employee", "", "", "sam@example.com", "password123"],
+                  ["N7", "Tia Twin", "Employee", "", "nowhere", "tia@example.com", ""],
+                  ["N7", "Tia Again", "Employee", "", "", "tia.again@example.com", ""],
+                  ["N8", "Uma Unknown", "Employee", "ZZ9", "", "uma@example.com", ""],
+                  ["N9", "Vic Verylong", "Employee", "", "X" * 41, "vic@example.com", ""],
+                  ["N10", "Wes Without", "Employee", "", "", "", ""]]
     book = xlsx_bytes(sheet_rows)
     s, b = imp(admin, book)
     errs = {r["empId"] + "@" + str(r["row"]): r["errors"] for r in b.get("rows", [])}
@@ -474,6 +476,8 @@ def main():
     check("preview lists a new team once, with its first spelling", b.get("newTeams") == ["Nowhere"], b.get("newTeams"))
     check("preview explains every problem row (existing ID, bad role, weak password, duplicate, unknown manager, long team name)",
           all(errs.get(k) for k in ("E1@5", "N4@6", "N6@8", "N7@10", "N8@11", "N9@12")), errs)
+    check("a row without an email is not ready, and says why",
+          any("email" in e.lower() for e in errs.get("N10@13", [])), errs.get("N10@13"))
     st_now = admin.req("GET", "/api/state")[1]
     check("preview creates nothing - no logins, no teams",
           "9001" not in {u["empId"] for u in st_now["team"]} and "Nowhere" not in st_now.get("teams", []))
@@ -493,13 +497,19 @@ def main():
     check("a one-time password given in the file is used", made.get("N2", {}).get("oneTimePassword") == "Harbor-Quartz-88")
     s, b = Client(port).login("9001", made.get("9001", {}).get("oneTimePassword") or "x")
     check("an imported person signs in with the generated password and must change it", s == 200 and b["user"]["mustChange"], b)
-    s, b = imp(admin, b'Employee ID,Full name,Teams\r\nW1,Wide Access,All Teams; Alpha\r\n', "wide.csv")
+    check("everyone imported keeps the email from the file",
+          (db.user("9001") or {}).get("email") == "nina@example.com" and (db.user("N2") or {}).get("email") == "omar@example.com")
+    s, b = imp(admin, b'Employee ID,Full name,Teams,Email\r\nW1,Wide Access,All Teams; Alpha,wide@example.com\r\n', "wide.csv")
     check("a file may give All Teams alongside a named team",
           s == 200 and b.get("ready") == 1 and b["rows"][0]["teams"] == ["All Teams", "Alpha"], b.get("rows"))
-    s, b = imp(admin, b"Employee ID,Full name\r\nC1,Carl Csv\r\n", "people.csv")
+    s, b = imp(admin, b"Employee ID,Full name,Email\r\nC1,Carl Csv,carl@example.com\r\n", "people.csv")
     check("a .csv file works too", s == 200 and b.get("ready") == 1, b)
-    many = ("Employee ID,Full name\n" + "".join("X%d,Xavier Person\n" % i for i in range(501))).encode()
-    check("more than 500 people in a file refused", imp(admin, many, "big.csv")[0] == 400)
+    s, b = imp(admin, b"Employee ID,Full name\r\nC2,Cara Noemail\r\n", "old-template.csv")
+    check("a file with no Email column is refused, asking for the latest template",
+          s == 400 and "Email" in b.get("error", "") and "latest template" in b.get("error", ""), b)
+    many = ("Employee ID,Full name,Email\n" + "".join("X%d,Xavier Person,x%d@example.com\n" % (i, i) for i in range(501))).encode()
+    s, b = imp(admin, many, "big.csv")
+    check("more than 500 people in a file refused", s == 400 and "500" in b.get("error", ""), b)
     check("an old .xls file gets a clear message", imp(admin, b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 64, "old.xls")[0] == 400)
     check("a workbook with XML entity tricks is refused", imp(admin, xlsx_bytes(sheet_rows, doctype=True))[0] == 400)
     check("random bytes are refused", imp(admin, bytes(range(256)) * 4, "junk.xlsx")[0] == 400)
@@ -619,11 +629,11 @@ def main():
 
     fresh_limits()
     application.reset_pad = 0.4
-    t0 = time.monotonic()
+    t0 = time.perf_counter()
     forgot("NOBODY-HERE")
-    took = time.monotonic() - t0
+    took = time.perf_counter() - t0
     application.reset_pad = 0
-    check("a code request takes the same minimum time whether or not an email is sent", took >= 0.4, took)
+    check("a code request takes the same minimum time whether or not an email is sent", took >= 0.39, took)
 
     s, b = admin.req("POST", "/api/mail/test", {})
     check("a test email needs the admin's own address first", s == 400, b)

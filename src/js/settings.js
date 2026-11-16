@@ -564,8 +564,8 @@
         el('button', { class: 'btn sm', type: 'button', onclick: getTemplate }, [I('download'), 'Download template'])
       ]),
       el('div', {
-        class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column, including an ' +
-          'optional email for password reset codes — then choose the file. Teams that don’t exist yet are created too. ' +
+        class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column. Everyone ' +
+          'needs an email, where their password reset codes go — then choose the file. Teams that don’t exist yet are created too. ' +
           'Every row is checked first; nothing is created until you confirm. Up to 500 people per file (.xlsx or .csv).'
       }),
       res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in template', input]),

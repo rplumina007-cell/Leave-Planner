@@ -173,7 +173,7 @@ def forgot_password(app, body, ctx):
     """Email a reset code to the address on file. The reply is the same whether
     or not the ID exists, is active or has an email - and takes as long - so
     this can't be used to find out who has an account."""
-    started = time.monotonic()
+    started = time.perf_counter()                # precise on every OS (monotonic ticks in ~15 ms on Windows)
     if not app.mail.available:
         raise ApiError(503, "Password reset by email isn't set up yet. Ask your admin to reset your password.")
     emp = str(body.get("empId", "")).strip()
@@ -192,7 +192,7 @@ def forgot_password(app, body, ctx):
         except mailer.MailError as e:
             print("Password reset email for %s not sent: %s" % (u["emp_id"], e), file=sys.stderr)
             app.db.drop_reset_code(u["emp_id"])
-    time.sleep(max(0.0, getattr(app, "reset_pad", RESET_PAD_SECONDS) - (time.monotonic() - started)))
+    time.sleep(max(0.0, getattr(app, "reset_pad", RESET_PAD_SECONDS) - (time.perf_counter() - started)))
     return {"ok": True, "message": RESET_SENT}, []
 
 
