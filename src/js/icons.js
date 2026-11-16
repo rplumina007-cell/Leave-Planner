@@ -35,7 +35,8 @@
     sliders: [['path', { d: 'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0' }], ['circle', { cx: 16, cy: 6, r: 2 }], ['circle', { cx: 10, cy: 12, r: 2 }], ['circle', { cx: 18, cy: 18, r: 2 }]],
     broom: [['path', { d: 'M14.5 3.5l-4 8M6.5 12.5h8.5l2 8H4.5z M9 16.5v4M12.5 16.5v4' }]],
     database: [['ellipse', { cx: 12, cy: 5.5, rx: 7.5, ry: 2.8 }], ['path', { d: 'M4.5 5.5v13c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8v-13M4.5 12c0 1.5 3.4 2.8 7.5 2.8s7.5-1.3 7.5-2.8' }]],
-    search: [['circle', { cx: 11, cy: 11, r: 6.5 }], ['path', { d: 'M20 20l-4.3-4.3' }]]
+    search: [['circle', { cx: 11, cy: 11, r: 6.5 }], ['path', { d: 'M20 20l-4.3-4.3' }]],
+    mail: [['rect', { x: 3, y: 5.5, width: 18, height: 13, rx: 2 }], ['path', { d: 'M3.5 7l8.5 6.5L20.5 7' }]]
   };
 
   function icon(name, attrs) {

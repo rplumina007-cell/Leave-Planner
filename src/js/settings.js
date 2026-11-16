@@ -15,8 +15,9 @@
     ['lists', 'Dropdowns', 'sliders'], ['clean', 'Cleanup', 'broom'], ['data', 'Data', 'database']];
   var NO_TEAM = '__none__';
 
-  var view = { tab: 'users', team: 'all', q: '', picked: {}, importResult: null };
+  var view = { tab: 'users', team: 'all', q: '', picked: {}, importResult: null, emailResult: null };
   var importFile = null;       // the chosen spreadsheet, kept for the confirm step
+  var emailFile = null;        // the chosen email sheet, likewise
 
   function randomPassword(emp, name) {
     var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -101,6 +102,7 @@
     var emp = el('input', { type: 'text', placeholder: 'e.g. 106767', autocomplete: 'off' });
     var name = el('input', { type: 'text', placeholder: 'Full name', autocomplete: 'off' });
     var pw = el('input', { type: 'text', placeholder: 'One-time password', autocomplete: 'off', spellcheck: 'false' });
+    var email = el('input', { type: 'email', placeholder: 'name@example.com', autocomplete: 'off', spellcheck: 'false' });
     var role = el('select', {}, ROLES.map(function (r) { return el('option', { value: r[0], text: r[1] }); }));
     var mgr = el('select', {}, [el('option', { value: '', text: '— none —' })].concat(managers().map(function (m) {
       return el('option', { value: m.empId, text: m.name + ' (' + roleLabel(roleValue(m)) + ')' });
@@ -112,7 +114,7 @@
       U.clear(err);
       var body = {
         empId: emp.value.trim(), name: name.value.trim(), password: pw.value, role: role.value,
-        managerEmpId: mgr.value || null, teams: teamPick.value()
+        managerEmpId: mgr.value || null, teams: teamPick.value(), email: email.value.trim()
       };
       if (!body.empId || !body.name || !body.password) {
         errBox(err, 'Employee ID, full name and password are all required.');
@@ -202,7 +204,7 @@
         return el('option', { value: m.empId, selected: u.managerEmpId === m.empId || null, text: m.name + ' · ' + roleLabel(roleValue(m)) });
       })));
 
-      var tr = el('tr', { style: u.active ? null : 'opacity:.6', data: { search: (u.name + ' ' + u.empId).toLowerCase() } }, [
+      var tr = el('tr', { style: u.active ? null : 'opacity:.6', data: { search: (u.name + ' ' + u.empId + ' ' + (u.email || '')).toLowerCase() } }, [
         el('td', { style: 'width:30px' }, [el('input', {
           type: 'checkbox', checked: view.picked[u.empId] || null, 'aria-label': 'Select ' + u.name,
           onchange: function (e) { view.picked[u.empId] = e.target.checked; syncBar(); }
@@ -211,7 +213,11 @@
           U.avatar(u.name),
           el('div', {}, [
             el('div', { style: 'font-weight:600', text: u.name + (self ? ' (you)' : '') }),
-            el('div', { class: 'sub mono', text: u.empId + (reports ? ' · manages ' + reports : '') })
+            el('div', { class: 'sub mono', text: u.empId + (reports ? ' · manages ' + reports : '') }),
+            el('div', {
+              class: 'sub', style: 'font-size:11.5px' + (u.email ? '' : ';font-style:italic'),
+              text: u.email || 'No email — can’t reset their own password'
+            })
           ])
         ])]),
         el('td', {}, [roleSel]),
@@ -227,6 +233,7 @@
           u.mustChange ? el('div', { class: 'sub', style: 'font-size:11px;margin-top:2px', text: 'awaiting first sign-in' }) : null
         ]),
         el('td', { style: 'text-align:right;white-space:nowrap' }, [
+          el('button', { class: 'btn sm', type: 'button', text: u.email ? 'Edit email' : 'Add email', onclick: function () { askEmail(u); } }), ' ',
           el('button', { class: 'btn sm', type: 'button', text: 'Reset password', onclick: function () { askReset(u); } }), ' ',
           self ? null : el('button', {
             class: 'btn sm', type: 'button', text: u.active ? 'Deactivate' : 'Activate', onclick: function () {
@@ -292,6 +299,7 @@
           ])]),
           el('div', { class: 'f2' }, [el('label', { class: 'f' }, ['Role', role]), el('label', { class: 'f' }, ['Manager', mgr])])
         ]),
+        el('label', { class: 'f', style: 'margin-top:12px' }, ['Email — where their password reset codes go (optional)', email]),
         el('div', { class: 'f', style: 'margin-top:12px' }, ['Teams — decide who they can see', teamPick.node]),
         el('div', { class: 'row', style: 'margin-top:12px;justify-content:space-between' }, [
           el('div', { class: 'sub', style: 'font-size:12px', text: 'They must choose their own password at first sign-in.' }),
@@ -309,6 +317,7 @@
         ]) : null
       ]),
       importBox(),
+      resetEmailBox(),
       el('div', { style: 'border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px' }, [
         el('div', { class: 'row', style: 'gap:10px' }, [
           el('h3', { style: 'font-size:13px', text: 'Logins (' + team().length + ')' }),
@@ -346,13 +355,160 @@
     if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return '"' + s.replace(/"/g, '""') + '"';
   }
-  function getTemplate() {
-    fetch('/api/users/template', { credentials: 'same-origin' }).then(function (r) {
+  function getSheet(url, filename) {
+    fetch(url, { credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) {
-        return r.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || 'Could not download the template'); });
+        return r.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || 'Could not download the file'); });
       }
       return r.blob();
-    }).then(function (blob) { downloadBlob(blob, 'leave-planner-users-template.xlsx'); }, function (e) { U.toast(e.message); });
+    }).then(function (blob) { downloadBlob(blob, filename); }, function (e) { U.toast(e.message); });
+  }
+  function getTemplate() { getSheet('/api/users/template', 'leave-planner-users-template.xlsx'); }
+
+  /* ---- password reset by email: is it set up, who has an address, and filling many in at once ---- */
+  function resetEmailBox() {
+    var mail = S.state.mail || {};
+    var people = team();
+    var withEmail = people.filter(function (u) { return u.email; }).length;
+    var res = view.emailResult;
+    var err = el('div', {});
+
+    function testMail() {
+      U.clear(err);
+      S.testMail().then(function (r) { U.toast('Test email sent to ' + r.to); }, function (e) { errBox(err, e.message); });
+    }
+    function send(commit) {
+      return readBase64(emailFile).then(function (b64) {
+        return commit ? S.importEmails(emailFile.name, b64) : S.previewEmails(emailFile.name, b64);
+      });
+    }
+    var input = el('input', {
+      type: 'file', accept: '.xlsx,.csv', 'aria-label': 'Choose the filled-in email sheet (.xlsx or .csv)',
+      onchange: function (e) {
+        var f = e.target.files && e.target.files[0];
+        U.clear(err);
+        if (!f) return;
+        if (f.size > 2 * 1024 * 1024) { errBox(err, 'Files up to 2 MB, please.'); return; }
+        emailFile = f;
+        send(false).then(function (r) {
+          view.emailResult = { rows: r.rows, changes: r.changes, committed: false, filename: f.name };
+          W.app.rerender();
+        }, function (e2) { emailFile = null; errBox(err, e2.message); });
+      }
+    });
+    function clear() { view.emailResult = null; emailFile = null; W.app.rerender(); }
+    function commit() {
+      if (!emailFile) { errBox(err, 'Choose the file again, then save.'); return; }
+      if (!confirm('Save ' + res.changes + ' email address' + (res.changes === 1 ? '' : 'es') + ' from ' + res.filename + '?')) return;
+      send(true).then(function (r) {
+        emailFile = null;
+        view.emailResult = { rows: r.rows, updated: r.updated, committed: true, filename: res.filename };
+        W.app.rerender();
+        U.toast(r.updated + ' email address' + (r.updated === 1 ? '' : 'es') + ' saved');
+      }, function (e2) { errBox(err, e2.message); });
+    }
+
+    var body = [
+      el('div', { class: 'row', style: 'gap:10px' }, [
+        el('h3', { style: 'font-size:13px', text: 'Password reset by email' }),
+        el('span', { class: 'pill ' + (mail.ready ? 'Approved' : 'Declined'), text: mail.ready ? 'Set up' : 'Not set up' }),
+        el('span', { style: 'flex:1' }),
+        el('button', { class: 'btn sm', type: 'button', onclick: testMail, disabled: mail.ready ? null : true },
+          [I('mail'), 'Send me a test email'])
+      ]),
+      el('div', {
+        class: 'sub', style: 'font-size:12px', text: (mail.status || 'Not set up') + '. ' +
+          (mail.ready ? 'People with an email on file can use “Forgot password?” on the sign-in page to get a code and choose a new password.'
+            : 'Until it is, “Forgot password?” tells people to ask an admin. See the README for the Gmail settings to add in Vercel.')
+      }),
+      el('div', { class: 'sub', style: 'font-size:12px;font-weight:600', text: withEmail + ' of ' + people.length + ' logins have an email.' }),
+      el('div', { class: 'row', style: 'gap:10px;margin-top:4px' }, [
+        el('b', { style: 'font-size:12.5px', text: 'Update many emails from Excel' }),
+        el('span', { style: 'flex:1' }),
+        el('button', {
+          class: 'btn sm', type: 'button', onclick: function () { getSheet('/api/users/emails-sheet', 'leave-planner-emails.xlsx'); }
+        }, [I('download'), 'Download email sheet'])
+      ]),
+      el('div', {
+        class: 'sub', style: 'font-size:12px', text: 'The sheet lists every login with the email on file. Fill in the Email column ' +
+          'and choose the file — you’ll see what changes before anything is saved. Blank emails are left as they are. ' +
+          'The sheet holds people’s addresses, so delete it once it’s uploaded.'
+      }),
+      res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in email sheet', input]),
+      err
+    ];
+    if (res) {
+      var bad = res.rows.filter(function (p) { return p.errors.length; }).length;
+      body.push(el('div', { class: 'row', style: 'gap:10px' }, [
+        el('b', { text: res.committed ? res.updated + ' saved' : res.changes + ' to save' }),
+        bad ? el('span', { class: 'pill Declined', text: bad + (res.committed ? ' not saved' : ' need fixing') }) : null,
+        el('span', { class: 'sub', text: res.filename }),
+        el('span', { style: 'flex:1' }),
+        !res.committed && res.changes ? el('button', { class: 'btn primary', type: 'button', onclick: commit },
+          [I('check'), 'Save ' + res.changes + ' email' + (res.changes === 1 ? '' : 's')]) : null,
+        el('button', { class: 'btn sm', type: 'button', text: res.committed ? 'Done' : 'Clear', onclick: clear })
+      ]));
+      var order = { change: 1, same: 2, blank: 3 };
+      var rows = res.rows.slice().sort(function (a, b) {
+        return (a.errors.length ? 0 : order[a.status]) - (b.errors.length ? 0 : order[b.status]) || a.row - b.row;
+      });
+      body.push(el('div', { class: 'scroll', style: 'max-height:380px;overflow-y:auto' }, [el('table', {}, [
+        el('thead', {}, [el('tr', {}, ['Row', 'Employee ID', 'Name', 'Email on file', 'New email', res.committed ? 'Result' : 'Check']
+          .map(function (t) { return el('th', { text: t }); }))]),
+        el('tbody', {}, rows.map(function (p) {
+          var status = p.errors.map(function (m) { return el('div', { class: 'err', style: 'margin:0', text: m }); });
+          if (!p.errors.length) {
+            status.push(p.status === 'change'
+              ? el('span', { class: 'pill Approved', text: res.committed ? 'Saved' : 'Will be saved' })
+              : el('span', { class: 'pill ghost', text: p.status === 'same' ? 'No change' : 'Left as is' }));
+          }
+          return el('tr', {}, [
+            el('td', { class: 'mono', text: String(p.row) }),
+            el('td', { class: 'mono', text: p.empId || '—' }),
+            el('td', { text: p.name || '—' }),
+            el('td', { text: p.current || '—' }),
+            el('td', { text: p.email || '—' }),
+            el('td', {}, status)
+          ]);
+        }))
+      ])]));
+    }
+    return el('div', { style: 'border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px' }, body);
+  }
+
+  function askEmail(u) {
+    var input = el('input', { type: 'email', value: u.email || '', placeholder: 'name@example.com', spellcheck: 'false', autocomplete: 'off' });
+    var err = el('div', {});
+    var box = el('div', { class: 'modal' });
+    function shut() { box.remove(); }
+    function save() {
+      U.clear(err);
+      var value = input.value.trim();
+      if (!value && u.email && !confirm('Remove ' + u.name + '’s email? They won’t be able to reset their own password.')) return;
+      S.updateUserStrict({ empId: u.empId, email: value }).then(function () {
+        U.toast(value ? 'Email saved for ' + u.name : 'Email removed for ' + u.name);
+        shut();
+      }, function (e) { errBox(err, e.message); });
+    }
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
+    box.appendChild(el('div', { class: 'box' }, [
+      el('div', { class: 'card-h' }, [el('h3', { text: 'Email — ' + u.name })]),
+      el('div', { class: 'card-b', style: 'display:grid;gap:12px' }, [
+        el('div', {
+          class: 'sub', text: 'Password reset codes for ' + u.name + ' are sent here. Each address can belong to one login only. ' +
+            'Leave it empty to remove it.'
+        }),
+        el('label', { class: 'f' }, ['Email address', input]),
+        err
+      ]),
+      el('div', { class: 'card-h', style: 'border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end' }, [
+        el('button', { class: 'btn', type: 'button', text: 'Cancel', onclick: shut }),
+        el('button', { class: 'btn primary', type: 'button', text: 'Save email', onclick: save })
+      ])
+    ]));
+    box.addEventListener('mousedown', function (e) { if (e.target === box) shut(); });
+    document.body.appendChild(box);
+    input.focus();
   }
 
   function importBox() {
@@ -407,9 +563,9 @@
         el('button', { class: 'btn sm', type: 'button', onclick: getTemplate }, [I('download'), 'Download template'])
       ]),
       el('div', {
-        class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column — then choose the file. ' +
-          'Teams that don’t exist yet are created too. Every row is checked first; nothing is created until you confirm. ' +
-          'Up to 500 people per file (.xlsx or .csv).'
+        class: 'sub', style: 'font-size:12px', text: 'Fill in one row per person — the template explains each column, including an ' +
+          'optional email for password reset codes — then choose the file. Teams that don’t exist yet are created too. ' +
+          'Every row is checked first; nothing is created until you confirm. Up to 500 people per file (.xlsx or .csv).'
       }),
       res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in template', input]),
       err
@@ -444,7 +600,7 @@
         }));
       }
       body.push(el('div', { class: 'scroll', style: 'max-height:380px;overflow-y:auto' }, [el('table', {}, [
-        el('thead', {}, [el('tr', {}, ['Row', 'Employee ID', 'Name', 'Role', 'Manager', 'Teams', res.committed ? 'Result' : 'Check']
+        el('thead', {}, [el('tr', {}, ['Row', 'Employee ID', 'Name', 'Role', 'Manager', 'Teams', 'Email', res.committed ? 'Result' : 'Check']
           .concat(res.committed ? ['One-time password'] : []).map(function (t) { return el('th', { text: t }); }))]),
         el('tbody', {}, res.rows.map(function (p) {
           var status = p.errors.map(function (m) { return el('div', { class: 'err', style: 'margin:0', text: m }); });
@@ -465,6 +621,7 @@
                 return t + (!res.committed && (p.newTeams || []).indexOf(t) !== -1 ? ' (new)' : '');
               }).join(', ') : '—'
             }),
+            el('td', { text: p.email || '—' }),
             el('td', {}, status),
             res.committed ? el('td', { class: 'mono', text: p.oneTimePassword || '' }) : null
           ]);

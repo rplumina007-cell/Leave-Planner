@@ -7,6 +7,7 @@ tools can never bypass a rule or a permission.
 import datetime as dt
 import hashlib
 import json
+import re
 
 PLANNED_REASONS = ["Planned Leave", "Compoff", "My Day"]
 STATUSES = ["Pending", "Approved", "Declined"]
@@ -174,6 +175,30 @@ def remove_team(state, name):
     if name not in state.get("teams", []):
         raise RuleError("Team not found")
     state["teams"] = [t for t in state["teams"] if t != name]
+
+
+# ---------------------------------------------------------------- email addresses
+EMAIL_RE = re.compile(r"^[^@\s,;<>\"']+@[^@\s,;<>\"']+\.[A-Za-z]{2,}$")
+
+
+def clean_email(value):
+    """A login's email for password reset codes: trimmed and lower-cased, or ""
+    for none. Only the shape is checked - a reset code arriving is the real test."""
+    email = str(value or "").strip().lower()
+    if not email:
+        return ""
+    if len(email) > 254 or not EMAIL_RE.match(email):
+        raise RuleError('"%s" doesn\'t look like an email address' % str(value).strip()[:80])
+    return email
+
+
+def email_owner(users, email, except_emp=None):
+    """The employee ID already using this email, if any. Each address belongs to
+    one login: a shared inbox could reset every account that uses it."""
+    for emp, u in users.items():
+        if emp != except_emp and email and (u.get("email") or "") == email:
+            return emp
+    return None
 
 
 # ---------------------------------------------------------------- public holidays

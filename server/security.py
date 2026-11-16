@@ -96,6 +96,30 @@ def token_hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+# Password reset by email: a six-digit code, valid for a few minutes, with a
+# handful of guesses before it's thrown away. Short-lived and guess-limited is
+# what makes six digits enough; only a hash of the code is ever stored.
+RESET_MINUTES = 10
+RESET_TRIES = 5
+
+
+def new_reset_code():
+    return "%06d" % secrets.randbelow(10 ** 6)
+
+
+def reset_code_hash(code):
+    salt = secrets.token_hex(8)
+    return salt + "$" + hashlib.sha256((salt + code).encode("utf-8")).hexdigest()
+
+
+def check_reset_code(code, stored):
+    try:
+        salt, digest = stored.split("$")
+    except (ValueError, AttributeError):
+        return False
+    return hmac.compare_digest(hashlib.sha256((salt + str(code)).encode("utf-8")).hexdigest(), digest)
+
+
 class LoginLimiter:
     """Failed attempts are counted in the database, so every server instance
     shares one count (Vercel runs several at once), over a 15-minute window.
@@ -106,9 +130,14 @@ class LoginLimiter:
       id    one employee ID, from any address   50   a distributed attack on one account
 
     The tight limit is per ID *and* address, so someone who knows a colleague's
-    ID can't lock them out with a few wrong passwords from their own device."""
+    ID can't lock them out with a few wrong passwords from their own device.
+
+    Password reset codes use the same window:
+      reset-id   codes emailed for one employee ID      3   no flooding someone's inbox
+      reset-ip   code requests from one address        10   no walking through IDs
+      code-ip    wrong codes entered from one address  10   no guessing across accounts"""
     WINDOW = 15 * 60
-    LIMITS = {"pair": 5, "ip": 20, "id": 50}
+    LIMITS = {"pair": 5, "ip": 20, "id": 50, "reset-id": 3, "reset-ip": 10, "code-ip": 10}
     DEFAULT = 5                      # any other key, e.g. "pw:<id>" for password changes
 
     def __init__(self, store):

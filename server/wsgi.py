@@ -20,11 +20,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import api        # noqa: E402
 import config     # noqa: E402
 import db as dbm  # noqa: E402
+import mailer     # noqa: E402
 import security   # noqa: E402
 
 COOKIE = "wfs_session"
 MAX_BODY = 64 * 1024
-IMPORT_MAX_BODY = 3 * 1024 * 1024      # /api/users/import carries a spreadsheet (base64)
+IMPORT_MAX_BODY = 3 * 1024 * 1024      # spreadsheet uploads (base64) - see SPREADSHEET_UPLOADS
+SPREADSHEET_UPLOADS = {"/api/users/import", "/api/users/emails"}
+SPREADSHEET_DOWNLOADS = {"/api/users/template": "leave-planner-users-template.xlsx",
+                         "/api/users/emails-sheet": "leave-planner-emails.xlsx"}
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # Served without a session: just enough to draw the sign-in page.
 PUBLIC_FILES = {"/login.html", "/src/css/app.css", "/src/css/fonts.css", "/src/js/login.js",
@@ -40,13 +44,17 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 
 class App:
-    def __init__(self, db_target, seed_path, secure=False, trust_proxy=False):
+    def __init__(self, db_target, seed_path, secure=False, trust_proxy=False, mail=None):
         """secure: the site is only ever reached over HTTPS.
         trust_proxy: read client IP / scheme / host from forwarding headers - only
-        safe behind a proxy that sets them itself (Vercel does)."""
+        safe behind a proxy that sets them itself (Vercel does).
+        mail: sends password reset codes. By default it reads SMTP_* settings
+        from the environment; behind a proxy (hosted) it never falls back to
+        printing codes in the console."""
         self.db = dbm.DB(db_target, seed_path)
         self.seed_path, self.secure, self.trust_proxy = seed_path, secure, trust_proxy
         self.limiter = security.LoginLimiter(self.db)
+        self.mail = mail or mailer.Mailer(console=not trust_proxy)
 
     def cookie(self, token, ctx, expire=False):
         c = "%s=%s; Path=/; HttpOnly; SameSite=Strict" % (COOKIE, token)
@@ -148,12 +156,12 @@ class _Request:
                 return self.post(path)
             if self.method not in ("GET", "HEAD"):
                 return self.json(405, {"error": "Method not allowed"})
-            if path == "/api/users/template":
-                status, out = api.template_file(self.app, self.ctx())
+            if path in SPREADSHEET_DOWNLOADS:
+                status, out = api.spreadsheet_file(self.app, path, self.ctx())
                 if status != 200:
                     return self.json(status, out)
                 return self.send(200, out, XLSX_TYPE, extra=[
-                    ("Content-Disposition", 'attachment; filename="leave-planner-users-template.xlsx"')])
+                    ("Content-Disposition", 'attachment; filename="%s"' % SPREADSHEET_DOWNLOADS[path])])
             status, payload, extra = api.handle(self.app, "GET", path, {}, self.ctx())
             if path == "/api/export" and status == 200:
                 extra = extra + [("Content-Disposition", 'attachment; filename="leave-planner-export.json"')]
@@ -185,7 +193,7 @@ class _Request:
             length = int(self.env.get("CONTENT_LENGTH") or 0)
         except ValueError:
             length = -1
-        if length < 0 or length > (IMPORT_MAX_BODY if path == "/api/users/import" else MAX_BODY):
+        if length < 0 or length > (IMPORT_MAX_BODY if path in SPREADSHEET_UPLOADS else MAX_BODY):
             return self.json(413, {"error": "Request too large"})
         try:
             body = json.loads(self.env["wsgi.input"].read(length) or b"{}") if length else {}

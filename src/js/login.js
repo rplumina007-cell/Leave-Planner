@@ -39,6 +39,7 @@
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     show('');
+    okBox.hidden = true;
     if (!emp.value.trim() || !pw.value) { show('Enter your employee ID and password.'); return; }
     go.disabled = true;
     go.textContent = 'Signing in…';
@@ -59,5 +60,102 @@
       show('Could not reach the server. Is it running?');
       go.disabled = false; go.textContent = 'Sign in';
     });
+  });
+
+  /* ---- Forgot password: a 6-digit code by email, then a new password ---- */
+  var okBox = document.getElementById('ok');
+  var resetForm = document.getElementById('resetForm');
+  var stepId = document.getElementById('stepId'), stepCode = document.getElementById('stepCode');
+  var rEmp = document.getElementById('rEmp'), rSend = document.getElementById('rSend');
+  var rSent = document.getElementById('rSent'), rCode = document.getElementById('rCode');
+  var rPw = document.getElementById('rPw'), rPw2 = document.getElementById('rPw2');
+  var rGo = document.getElementById('rGo'), rResend = document.getElementById('rResend');
+  var rErr = document.getElementById('rErr');
+  var resendTimer = null;
+
+  function rShow(msg) { rErr.textContent = msg; rErr.hidden = !msg; }
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-WFS-Request': '1' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (b) {
+        if (!r.ok) throw new Error(b.error || 'Something went wrong. Try again.');
+        return b;
+      });
+    }, function () { throw new Error('Could not reach the server. Check your connection.'); });
+  }
+  function openReset() {
+    show(''); okBox.hidden = true;
+    form.hidden = true; resetForm.hidden = false;
+    stepId.hidden = false; stepCode.hidden = true; rShow('');
+    rEmp.value = emp.value.trim();
+    rEmp.focus();
+  }
+  function backToSignIn(message) {
+    clearInterval(resendTimer);
+    resetForm.hidden = true; form.hidden = false;
+    rCode.value = rPw.value = rPw2.value = '';
+    if (rEmp.value.trim()) emp.value = rEmp.value.trim();
+    okBox.textContent = message || ''; okBox.hidden = !message;
+    pw.value = '';
+    (emp.value ? pw : emp).focus();
+  }
+  function holdResend(seconds) {
+    clearInterval(resendTimer);
+    var left = seconds;
+    rResend.disabled = true;
+    rResend.textContent = 'send a new code (' + left + 's)';
+    resendTimer = setInterval(function () {
+      left -= 1;
+      if (left > 0) { rResend.textContent = 'send a new code (' + left + 's)'; return; }
+      clearInterval(resendTimer);
+      rResend.disabled = false;
+      rResend.textContent = 'send a new code';
+    }, 1000);
+  }
+  function sendCode() {
+    rShow('');
+    var id = rEmp.value.trim();
+    if (!id) { rShow('Enter your employee ID.'); rEmp.focus(); return; }
+    rSend.disabled = true; rSend.textContent = 'Sending…';
+    post('/api/password/forgot', { empId: id }).then(function (b) {
+      rSent.textContent = b.message;
+      stepId.hidden = true; stepCode.hidden = false;
+      holdResend(60);
+      rCode.focus();
+    }, function (e) { rShow(e.message); }).then(function () {
+      rSend.disabled = false; rSend.textContent = 'Email me a code';
+    });
+  }
+  function setPassword() {
+    rShow('');
+    var code = rCode.value.replace(/\s/g, '');
+    if (!/^\d{6}$/.test(code)) { rShow('Enter the 6-digit code from the email.'); rCode.focus(); return; }
+    if (!rPw.value) { rShow('Choose a new password.'); rPw.focus(); return; }
+    if (rPw.value !== rPw2.value) { rShow('The two passwords don’t match.'); rPw2.focus(); return; }
+    rGo.disabled = true; rGo.textContent = 'Saving…';
+    post('/api/password/reset', { empId: rEmp.value.trim(), code: code, password: rPw.value }).then(function () {
+      backToSignIn('Password updated. Sign in with your new password.');
+    }, function (e) {
+      rShow(e.message);
+      if (/code/i.test(e.message)) { rCode.focus(); rCode.select(); } else { rPw.focus(); }
+    }).then(function () {
+      rGo.disabled = false; rGo.textContent = 'Set new password';
+    });
+  }
+
+  document.getElementById('forgot').addEventListener('click', openReset);
+  document.getElementById('rBack').addEventListener('click', function () { backToSignIn(''); });
+  rResend.addEventListener('click', function () {
+    rCode.value = '';
+    stepCode.hidden = true; stepId.hidden = false;
+    sendCode();
+  });
+  rCode.addEventListener('input', function () { rCode.value = rCode.value.replace(/\D/g, '').slice(0, 6); });
+  resetForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (stepCode.hidden) sendCode(); else setPassword();
   });
 })();

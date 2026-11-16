@@ -1,5 +1,6 @@
 """Adding many logins at once from a spreadsheet: the downloadable Excel template,
-and reading a filled-in copy back (.xlsx or .csv).
+and reading a filled-in copy back (.xlsx or .csv). Also the email sheet: every
+existing login with its email, for filling in many addresses at once.
 
 Standard library only. The file comes from a user, so reading is defensive:
 the upload is size-capped by the API, every part of the workbook is capped
@@ -34,16 +35,29 @@ COLUMNS = [
     ("role", "Role", 18),
     ("manager", "Manager employee ID", 22),
     ("teams", "Teams", 32),
+    ("email", "Email (optional)", 32),
     ("password", "One-time password (optional)", 30),
 ]
+EMAIL_COLUMNS = [
+    ("empId", "Employee ID", 16),
+    ("name", "Full name (for reference)", 30),
+    ("email", "Email", 36),
+]
 # Header spellings accepted when reading back (lower-case, letters only)
+EMAIL_WORDS = ("emailoptional", "email", "emailaddress", "emailid", "mail", "workemail")
 ALIASES = {
     "empId": ("employeeid", "empid", "employeeno", "employeenumber", "id"),
     "name": ("fullname", "name", "username", "usernamefullname", "employeename"),
     "role": ("role", "designation"),
     "manager": ("manageremployeeid", "managerid", "manager", "manageremployee"),
     "teams": ("teams", "team"),
+    "email": EMAIL_WORDS,
     "password": ("onetimepasswordoptional", "onetimepassword", "password", "temporarypassword"),
+}
+EMAIL_ALIASES = {
+    "empId": ALIASES["empId"],
+    "name": ALIASES["name"] + ("fullnameforreference",),
+    "email": EMAIL_WORDS,
 }
 ROLE_WORDS = {
     "": ("employee", False), "employee": ("employee", False),
@@ -63,23 +77,40 @@ def _cell(ref, text, style):
     return '<c r="%s" t="inlineStr" s="%d"><is><t xml:space="preserve">%s</t></is></c>' % (ref, style, escape(text))
 
 
+HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+
+
+def _data_sheet(columns, data_rows=(), role_dropdown=False):
+    """A sheet with a frozen heading row, text-formatted columns (so IDs keep
+    leading zeros) and, optionally, rows already filled in."""
+    cols = "".join('<col min="%d" max="%d" width="%d" style="1" customWidth="1"/>' % (i + 1, i + 1, c[2])
+                   for i, c in enumerate(columns))
+    rows = ['<row r="1">%s</row>' % "".join(_cell("%s1" % _col(i), c[1], 2) for i, c in enumerate(columns))]
+    for n, values in enumerate(data_rows, start=2):
+        rows.append('<row r="%d">%s</row>' % (n, "".join(
+            _cell("%s%d" % (_col(i), n), str(v), 1) for i, v in enumerate(values) if v)))
+    dropdown = ('<dataValidations count="1"><dataValidation type="list" allowBlank="1" showErrorMessage="1" '
+                'errorTitle="Role" error="Choose Employee, Manager, Senior manager or Admin" sqref="C2:C%d">'
+                '<formula1>"%s"</formula1></dataValidation></dataValidations>' % (MAX_ROWS + 1, ROLE_CHOICES)
+                if role_dropdown else "")
+    return (HEAD + '<worksheet xmlns="%s" xmlns:r="%s">' % (MAIN_NS, DOC_RELS_NS) +
+            '<sheetViews><sheetView workbookViewId="0" tabSelected="1">'
+            '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
+            '<sheetFormatPr defaultRowHeight="15"/><cols>%s</cols>' % cols +
+            '<sheetData>%s</sheetData>%s</worksheet>' % ("".join(rows), dropdown))
+
+
+def _guide_sheet(lines):
+    rows = "".join('<row r="%d">%s</row>' % (i + 1, _cell("A%d" % (i + 1), text, style) if text else "")
+                   for i, (text, style) in enumerate(lines))
+    return (HEAD + '<worksheet xmlns="%s"><cols><col min="1" max="1" width="120" customWidth="1"/></cols>' % MAIN_NS +
+            '<sheetData>%s</sheetData></worksheet>' % rows)
+
+
 def template_xlsx(teams):
     """The Excel template: a Users sheet (header, text-formatted columns so IDs
     keep leading zeros, a Role dropdown) and an Instructions sheet that lists
     the teams that exist right now."""
-    head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    cols = "".join('<col min="%d" max="%d" width="%d" style="1" customWidth="1"/>' % (i + 1, i + 1, c[2])
-                   for i, c in enumerate(COLUMNS))
-    header = "".join(_cell("%s1" % _col(i), c[1], 2) for i, c in enumerate(COLUMNS))
-    users = (head + '<worksheet xmlns="%s" xmlns:r="%s">' % (MAIN_NS, DOC_RELS_NS) +
-             '<sheetViews><sheetView workbookViewId="0" tabSelected="1">'
-             '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'
-             '<sheetFormatPr defaultRowHeight="15"/><cols>%s</cols>' % cols +
-             '<sheetData><row r="1">%s</row></sheetData>' % header +
-             '<dataValidations count="1"><dataValidation type="list" allowBlank="1" showErrorMessage="1" '
-             'errorTitle="Role" error="Choose Employee, Manager, Senior manager or Admin" sqref="C2:C%d">'
-             '<formula1>"%s"</formula1></dataValidation></dataValidations></worksheet>' % (MAX_ROWS + 1, ROLE_CHOICES))
-
     lines = [
         ("How to fill in the Users sheet", 2),
         ("", 0),
@@ -89,17 +120,37 @@ def template_xlsx(teams):
         ("Role — Employee, Manager, Senior manager or Admin (pick from the list). Blank means Employee.", 0),
         ("Manager employee ID — optional: an existing Manager, Senior manager or Admin, or someone added in this same sheet with one of those roles.", 0),
         ("Teams — optional: one or more team names separated by commas, or All Teams. A team that doesn't exist yet is created when you import (up to 40 characters; you'll see it in the preview first).", 0),
+        ("Email — optional: where their password reset codes go, so they can reset a forgotten password themselves. Each address can belong to one login only.", 0),
         ("One-time password — optional: at least 10 characters, not a common password, and not containing the person's name or ID. Leave blank to have one generated.", 0),
         ("Everyone signs in with their employee ID and chooses their own password at first sign-in.", 0),
         ("Save as .xlsx (or .csv), then choose the file in Settings → Users. You'll see a preview before anything is created.", 0),
         ("", 0),
         ("Teams that exist right now:", 2),
     ] + [("  " + t, 0) for t in teams or []] + ([("  (none yet — name new ones in the Teams column and they'll be created)", 0)] if not teams else [])
-    rows = "".join('<row r="%d">%s</row>' % (i + 1, _cell("A%d" % (i + 1), text, style) if text else "")
-                   for i, (text, style) in enumerate(lines))
-    guide = (head + '<worksheet xmlns="%s"><cols><col min="1" max="1" width="120" customWidth="1"/></cols>' % MAIN_NS +
-             '<sheetData>%s</sheetData></worksheet>' % rows)
+    return _workbook("Users", _data_sheet(COLUMNS, role_dropdown=True), _guide_sheet(lines))
 
+
+def emails_xlsx(users):
+    """Every login with its current email, to fill in and upload again."""
+    people = sorted(users.values(), key=lambda u: u["name"].lower())
+    lines = [
+        ("How to fill in the Emails sheet", 2),
+        ("", 0),
+        ("Every login is listed with the email on file now. Type or paste addresses in the Email column.", 0),
+        ("Password reset codes go to this address, so people can reset a forgotten password themselves.", 0),
+        ("Each address can belong to one login only.", 0),
+        ("Leave an email blank to keep what's on file. To remove an address, edit that person in Settings → Users.", 0),
+        ("Only the Email column is used. Names are there for reference; delete rows you aren't changing if you like.", 0),
+        ("Save as .xlsx (or .csv), then choose the file under Update emails in Settings → Users. You'll see a preview first.", 0),
+        ("", 0),
+        ("This file holds people's email addresses - delete it once you've uploaded it.", 2),
+    ]
+    return _workbook("Emails", _data_sheet(EMAIL_COLUMNS, [(u["emp_id"], u["name"], u.get("email") or "") for u in people]),
+                     _guide_sheet(lines))
+
+
+def _workbook(first_sheet, data_xml, guide_xml):
+    head = HEAD
     styles = (head + '<styleSheet xmlns="%s">' % MAIN_NS +
               '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'
               '<font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
@@ -126,13 +177,14 @@ def template_xlsx(teams):
         ("_rels/.rels", head + '<Relationships xmlns="%s">' % PKG_RELS_NS +
          '<Relationship Id="rId1" Type="%s/officeDocument" Target="xl/workbook.xml"/></Relationships>' % DOC_RELS_NS),
         ("xl/workbook.xml", head + '<workbook xmlns="%s" xmlns:r="%s"><sheets>' % (MAIN_NS, DOC_RELS_NS) +
-         '<sheet name="Users" sheetId="1" r:id="rId1"/><sheet name="Instructions" sheetId="2" r:id="rId2"/></sheets></workbook>'),
+         '<sheet name="%s" sheetId="1" r:id="rId1"/><sheet name="Instructions" sheetId="2" r:id="rId2"/></sheets></workbook>'
+         % first_sheet),
         ("xl/_rels/workbook.xml.rels", head + '<Relationships xmlns="%s">' % PKG_RELS_NS +
          '<Relationship Id="rId1" Type="%s/worksheet" Target="worksheets/sheet1.xml"/>' % DOC_RELS_NS +
          '<Relationship Id="rId2" Type="%s/worksheet" Target="worksheets/sheet2.xml"/>' % DOC_RELS_NS +
          '<Relationship Id="rId3" Type="%s/styles" Target="styles.xml"/></Relationships>' % DOC_RELS_NS),
-        ("xl/worksheets/sheet1.xml", users),
-        ("xl/worksheets/sheet2.xml", guide),
+        ("xl/worksheets/sheet1.xml", data_xml),
+        ("xl/worksheets/sheet2.xml", guide_xml),
         ("xl/styles.xml", styles),
     ]
     buf = io.BytesIO()
@@ -144,14 +196,23 @@ def template_xlsx(teams):
 
 # ---------------------------------------------------------------- reading a file back
 def read_rows(filename, raw):
-    """[{row, empId, name, role, manager, teams, password}] from an .xlsx or .csv."""
+    """[{row, empId, name, role, manager, teams, email, password}] from an .xlsx or .csv."""
+    return _records(_grid(raw), ALIASES, ("empId", "name"),
+                    "Couldn't find the Employee ID and Full name columns — start from the template")
+
+
+def read_email_rows(filename, raw):
+    """[{row, empId, name, email}] from a filled-in email sheet."""
+    return _records(_grid(raw), EMAIL_ALIASES, ("empId", "email"),
+                    "Couldn't find the Employee ID and Email columns — start from the downloaded email sheet")
+
+
+def _grid(raw):
     if raw[:2] == b"PK":
-        grid = _xlsx_grid(raw)
-    elif raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return _xlsx_grid(raw)
+    if raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
         raise RuleError("That's an old-style .xls file — save it as .xlsx (or .csv) and try again")
-    else:
-        grid = _csv_grid(raw)
-    return _records(grid)
+    return _csv_grid(raw)
 
 
 def _csv_grid(raw):
@@ -261,26 +322,26 @@ def _xlsx_grid(raw):
         return grid
 
 
-def _key(header):
+def _key(header, aliases):
     h = re.sub(r"[^a-z]", "", str(header).lower())
-    for key, names in ALIASES.items():
+    for key, names in aliases.items():
         if h in names:
             return key
     return None
 
 
-def _records(grid):
+def _records(grid, aliases, required, missing):
     rows = [(n, cells) for n, cells in grid if any(str(c).strip() for c in cells)]
     if not rows:
         raise RuleError("The file has no rows")
     header = rows[0][1]
     cols = {}
     for i, h in enumerate(header):
-        k = _key(h)
+        k = _key(h, aliases)
         if k and k not in cols:
             cols[k] = i
-    if "empId" not in cols or "name" not in cols:
-        raise RuleError("Couldn't find the Employee ID and Full name columns — start from the template")
+    if any(k not in cols for k in required):
+        raise RuleError(missing)
     data = rows[1:]
     if not data:
         raise RuleError("The sheet has headings but no people yet")
@@ -289,7 +350,7 @@ def _records(grid):
     out = []
     for n, cells in data:
         rec = {"row": n}
-        for k in ALIASES:
+        for k in aliases:
             i = cols.get(k)
             rec[k] = str(cells[i]).strip() if i is not None and i < len(cells) else ""
         out.append(rec)
@@ -306,7 +367,7 @@ def plan(rows, users, known_teams):
     the spelling it first appears with; later rows match it in any case."""
     by_lower = {t.lower(): t for t in known_teams}
     new_lower = set()
-    out, seen = [], {}
+    out, seen, emails_seen = [], {}, {}
     for r in rows:
         errs = []
         emp = r["empId"]
@@ -350,8 +411,18 @@ def plan(rows, users, known_teams):
             problem = security.password_problem(r["password"], emp, name)
             if problem:
                 errs.append(problem)
+        email = _email_cell(r.get("email", ""), errs)
+        if email:
+            owner = domain.email_owner(users, email)
+            if owner:
+                errs.append("%s is already used by %s" % (email, owner))
+            elif email in emails_seen:
+                errs.append("Same email as row %d" % emails_seen[email])
+            else:
+                emails_seen[email] = r["row"]
         out.append({"row": r["row"], "empId": emp, "name": name, "role": role or "", "senior": senior,
-                    "manager": r["manager"], "teams": teams, "newTeams": new_here, "password": r["password"], "errors": errs})
+                    "manager": r["manager"], "teams": teams, "newTeams": new_here, "email": email,
+                    "password": r["password"], "errors": errs})
 
     in_file = {p["empId"]: p for p in out}
     for p in out:
@@ -410,7 +481,8 @@ def create(db, ready, actor=""):
     for p in ready:
         pw = p["password"] or temp_password(p["empId"], p["name"])
         try:
-            db.create_user(p["empId"], p["name"], p["role"], pw, None, must_change=True, teams=p["teams"], senior=p["senior"])
+            db.create_user(p["empId"], p["name"], p["role"], pw, None, must_change=True, teams=p["teams"], senior=p["senior"],
+                           email=p.get("email") or "")
         except Exception:                        # e.g. the same ID was created a moment ago
             p["errors"].append("Couldn't be created — the employee ID may have just been taken")
             continue
@@ -423,3 +495,56 @@ def create(db, ready, actor=""):
             else:
                 p["errors"].append("Created without a manager — %s wasn't created" % p["manager"])
     return done, made_teams
+
+
+# ---------------------------------------------------------------- emails for existing logins
+def _email_cell(value, errs):
+    try:
+        return domain.clean_email(value)
+    except RuleError as e:
+        errs.append(str(e))
+        return ""
+
+
+def plan_emails(rows, users):
+    """Check an email sheet against today's logins. Each row comes back with a
+    status - "change", "same", or "blank" (left as it is) - and errors. Each
+    address may belong to one login, judged on how things would look after the
+    whole file is applied, so two people can swap addresses in one upload."""
+    out, seen = [], {}
+    for r in rows:
+        errs = []
+        emp = r["empId"]
+        u = users.get(emp)
+        if not u:
+            errs.append("No login with employee ID %s" % emp if emp else "Employee ID is missing")
+        elif emp in seen:
+            errs.append("Same employee ID as row %d" % seen[emp])
+        else:
+            seen[emp] = r["row"]
+        email = _email_cell(r.get("email", ""), errs)
+        current = (u or {}).get("email") or ""
+        status = "blank" if not email else "same" if email == current else "change"
+        out.append({"row": r["row"], "empId": emp, "name": (u or {}).get("name") or r.get("name") or "",
+                    "current": current, "email": email, "status": status, "errors": errs})
+
+    final = {emp: u.get("email") or "" for emp, u in users.items()}
+    for p in out:
+        if not p["errors"] and p["status"] == "change":
+            final[p["empId"]] = p["email"]
+    for p in out:
+        if not p["errors"] and p["status"] == "change":
+            others = [emp for emp, e in final.items() if e == p["email"] and emp != p["empId"]]
+            if others:
+                p["errors"].append("%s would also belong to %s" % (p["email"], ", ".join(sorted(others))))
+    return out
+
+
+def apply_emails(db, ready):
+    """Save the rows that change an address. Returns how many changed."""
+    n = 0
+    for p in ready:
+        if p["status"] == "change":
+            db.update_user(p["empId"], email=p["email"])
+            n += 1
+    return n

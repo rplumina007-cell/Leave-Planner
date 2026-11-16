@@ -99,6 +99,51 @@ below them.
   `server/`, `tools/` or other project files.
 - Locked out? `python server/manage.py reset-password --emp-id <ID>`.
 
+**Forgot password? — a code by email**
+
+Anyone with an email on file can reset their own password: *Forgot password?* on
+the sign-in page → their employee ID → a 6-digit code arrives by email → code
+plus a new password. Admins add the addresses (see Settings → Users below).
+
+- The code lasts 10 minutes and allows 5 guesses; asking again replaces it, and
+  it stops working if their email changes. Only a hash of it is stored.
+- The reply is identical — and takes as long — whether or not the ID exists or
+  has an email, so the page can't be used to find out who has an account.
+- Limits over 15 minutes: 3 codes per employee ID (no flooding an inbox), 10
+  code requests and 10 wrong codes per address (no working through accounts).
+- A reset signs the person out everywhere and clears any sign-in lockout on
+  their ID; it's recorded in the activity log.
+- Each address belongs to one login. Emails are shown only to admins and to the
+  person themselves — never to managers or teammates.
+
+**Setting up the sender (Gmail)** — the site needs an account to send from:
+
+1. Use a Gmail account just for this (create one, e.g. a leave-planner address),
+   not your personal inbox: codes are sent from it.
+2. In that Google account: **Security → 2-Step Verification** — turn it on.
+3. Then **Security → App passwords** (myaccount.google.com/apppasswords) —
+   create one called "Leave Planner" and copy the 16-character password. This
+   is not the account's own password, and can be revoked there at any time.
+4. In Vercel → the project → **Settings → Environment Variables**, add:
+
+   | Name | Value |
+   |---|---|
+   | `SMTP_HOST` | `smtp.gmail.com` |
+   | `SMTP_PORT` | `587` |
+   | `SMTP_USER` | the Gmail address |
+   | `SMTP_PASSWORD` | the app password |
+
+   (`MAIL_FROM` is optional and defaults to `SMTP_USER`. Any other SMTP service
+   works the same way with its own host, port, user and password.)
+5. **Redeploy** (Deployments → ⋯ → Redeploy) — new settings only reach new
+   deployments.
+6. Settings → Users → **Password reset by email** should now say *Set up*. Add
+   your own email, then **Send me a test email**.
+
+Until it's set up, *Forgot password?* tells people to ask an admin. On your own
+computer, with nothing set, codes are printed in the server console instead of
+emailed, so the flow can be tried locally.
+
 **Sharing with your team**
 
 ```bash
@@ -114,7 +159,7 @@ behind the company's existing sign-in.
 OneDrive folder, since a live database being synced mid-write can corrupt. Back
 it up from ⚙ → Data → Export.
 
-**Tests**: `python server/test_server.py` runs 85 end-to-end checks of the gateway,
+**Tests**: `python server/test_server.py` runs over 240 end-to-end checks of the gateway,
 every role rule, and hosted behaviour (lockout shared across instances, Secure
 cookies behind HTTPS) against a throwaway database and generated sample data — no
 imported sheet data needed. Set `TEST_DATABASE_URL` to a throwaway Postgres
@@ -292,8 +337,10 @@ Changes are saved in the server's database, not back to the sheet.
 A full page, opened from the profile menu, with six sections:
 
 - **Users** — create logins (employee ID, full name, password, role, manager,
-  teams), change roles and manager assignments, deactivate, reset passwords,
-  delete. Search by name or ID, filter by team, and tick several people to add
+  teams, email), change roles and manager assignments, add or edit emails,
+  deactivate, reset passwords, delete. Each person shows their email, or that
+  they have none and so can't reset their own password. Search by name, ID or
+  email, filter by team, and tick several people to add
   them to — or remove them from — a team in one go. People who appear in the
   records but have no login are listed as one-click prefills. Deleting a login
   keeps that person's leave and WFH history.
@@ -307,7 +354,17 @@ A full page, opened from the profile menu, with six sections:
   exist yet are created too; the preview lists them first, and "sales" and
   "Sales" become one team. Only rows that pass are created;
   blank passwords are generated, and the one-time passwords are shown once and
-  can be downloaded as a CSV to hand out.
+  can be downloaded as a CSV to hand out. The template has an optional Email
+  column too.
+
+  **Password reset by email:** shows whether sending is set up (see *Forgot
+  password?* above), how many logins have an email, and a **Send me a test
+  email** button. To fill in many addresses at once: **Download email sheet**
+  (every login with its current email), fill in the Email column, choose the
+  file. The preview shows what will change and explains any problem — unknown
+  IDs, repeated rows, bad or already-used addresses — and nothing is saved until
+  you confirm. Blank emails are left as they are, and two people can swap
+  addresses in one upload. The sheet holds people's addresses: delete it after.
 - **Teams** — create and remove teams; **All Teams** is built in.
 - **Public holidays** — add or remove dated, named holidays. They're shaded on
   the calendar and don't count as working days in new requests, day counts and

@@ -238,6 +238,15 @@
   function importUsers(filename, data) {
     return call('/api/users/import', { filename: filename, data: data, commit: true }, { raise: true });
   }
+  /* Emails for existing logins from the downloaded sheet: check, then save. */
+  function previewEmails(filename, data) {
+    return W.api.post('/api/users/emails', { filename: filename, data: data, commit: false });
+  }
+  function importEmails(filename, data) {
+    return call('/api/users/emails', { filename: filename, data: data, commit: true }, { raise: true });
+  }
+  function updateUserStrict(u) { return call('/api/users/update', u, { raise: true }); }
+  function testMail() { return W.api.post('/api/mail/test', {}); }
   function createTeam(name) { return call('/api/teams/add', { name: name }, { raise: true }); }
   function removeTeam(name) { return call('/api/teams/remove', { name: name }); }
 
@@ -272,6 +281,7 @@
     purge: purge, syncFromSeed: syncFromSeed,
     createUser: createUser, updateUser: updateUser, resetPassword: resetPassword, deleteUser: deleteUser,
     createTeam: createTeam, removeTeam: removeTeam, previewImport: previewImport, importUsers: importUsers,
+    previewEmails: previewEmails, importEmails: importEmails, updateUserStrict: updateUserStrict, testMail: testMail,
     changePassword: changePassword, logout: logout, exportJSON: exportJSON
   };
 })(window.WFS);

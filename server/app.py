@@ -58,6 +58,7 @@ def main(argv=None):
     shown = "localhost" if args.host in ("127.0.0.1", "0.0.0.0") else args.host
     print("Leave Planner running at %s://%s:%d" % ("https" if secure else "http", shown, args.port))
     print("Database: %s" % db_path)
+    print("Password reset emails: %s" % application.mail.describe())
     if not os.path.exists(args.seed):
         print("No sheet data imported yet (%s missing). Load it with:" % os.path.relpath(args.seed, config.PROJECT_ROOT))
         print('  python tools/import-sheet.py "<Google Sheet link>"')

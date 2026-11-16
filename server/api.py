@@ -17,9 +17,13 @@ import base64
 import binascii
 import os
 import re
+import sys
+import time
+from html import escape as html_escape
 
 import bulk_users
 import domain
+import mailer
 import security
 from domain import RuleError
 
@@ -39,7 +43,14 @@ def split_role(value):
     raise ApiError(400, "Unknown role")
 EMP_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
 # Reachable while a user still has to replace their initial password.
-PASSWORD_GATE_OPEN = {"/api/me", "/api/me/password", "/api/logout"}
+PASSWORD_GATE_OPEN = {"/api/me", "/api/me/password", "/api/logout", "/api/password/forgot", "/api/password/reset"}
+
+RESET_SENT = ("If that employee ID has an email address on file, a 6-digit code is on its way. "
+              "It expires in %d minutes." % security.RESET_MINUTES)
+RESET_BAD_CODE = "That code is wrong or has expired. Check the latest email, or ask for a new code."
+# A code request takes at least this long whether or not an email goes out, so
+# the timing doesn't reveal which employee IDs exist or have an address.
+RESET_PAD_SECONDS = 2.5
 
 
 class ApiError(Exception):
@@ -48,10 +59,15 @@ class ApiError(Exception):
         self.status, self.payload = status, dict(error=message, **extra)
 
 
-def public_user(u):
-    return {"empId": u["emp_id"], "name": u["name"], "role": u["role"],
-            "managerEmpId": u["manager_emp_id"], "teams": u.get("teams") or [], "senior": bool(u.get("senior")),
-            "mustChange": u["must_change"], "active": u["active"]}
+def public_user(u, with_email=False):
+    """A login as the browser sees it. Email addresses go only to admins and to
+    the person themselves."""
+    out = {"empId": u["emp_id"], "name": u["name"], "role": u["role"],
+           "managerEmpId": u["manager_emp_id"], "teams": u.get("teams") or [], "senior": bool(u.get("senior")),
+           "mustChange": u["must_change"], "active": u["active"]}
+    if with_email:
+        out["email"] = u.get("email") or ""
+    return out
 
 
 def need(user, *roles):
@@ -65,10 +81,12 @@ def state_payload(app, user):
     users = app.db.users()
     st = app.db.read_state()
     out = domain.view_for(st, user, users)
-    out["me"] = public_user(user)
+    out["me"] = public_user(user, with_email=True)
     if user["role"] in ("manager", "admin"):
-        out["team"] = [public_user(u) for u in users.values() if domain.can_see(user, u["emp_id"], users)]
+        out["team"] = [public_user(u, with_email=user["role"] == "admin") for u in users.values()
+                       if domain.can_see(user, u["emp_id"], users)]
     if user["role"] == "admin":
+        out["mail"] = {"ready": app.mail.available, "status": app.mail.describe()}
         h = domain.load_seed(app.seed_path)[1] if os.path.exists(app.seed_path) else None
         out["seedIsNewer"] = bool(h) and h != st.get("seedHash")
         known = set(users)
@@ -107,7 +125,7 @@ def logout(app, body, ctx):
 
 def me(app, body, ctx):
     need(ctx["user"])
-    return {"user": public_user(ctx["user"])}, []
+    return {"user": public_user(ctx["user"], with_email=True)}, []
 
 
 def change_password(app, body, ctx):
@@ -130,6 +148,100 @@ def change_password(app, body, ctx):
     app.db.end_all_sessions(user["emp_id"], except_token=ctx["token"])
     app.limiter.clear(key)
     return {"ok": True}, []
+
+
+# ------------------------------------------------------------------ forgotten password: a code by email
+def _reset_email(u, code):
+    first = (u["name"].split() or ["there"])[0]
+    minutes = security.RESET_MINUTES
+    subject = "Your Leave Planner password reset code"
+    text = ("Hi %s,\n\nYour code to reset your Leave Planner password is:\n\n    %s\n\n"
+            "It expires in %d minutes. Enter it on the sign-in page, under \"Forgot password?\".\n\n"
+            "If you didn't ask for this, you can ignore this email - your password hasn't changed. "
+            "Never share this code with anyone.\n" % (first, code, minutes))
+    html = ('<div style="font-family:Segoe UI,Arial,sans-serif;font-size:15px;color:#2b2622;line-height:1.5">'
+            '<p>Hi %s,</p><p>Your code to reset your Leave Planner password is:</p>'
+            '<p style="font-size:28px;font-weight:700;letter-spacing:6px;margin:18px 0">%s</p>'
+            '<p>It expires in %d minutes. Enter it on the sign-in page, under &ldquo;Forgot password?&rdquo;.</p>'
+            '<p style="color:#6b625a;font-size:13px">If you didn\'t ask for this, you can ignore this email &mdash; '
+            'your password hasn\'t changed. Never share this code with anyone.</p></div>'
+            % (html_escape(first), code, minutes))
+    return subject, text, html
+
+
+def forgot_password(app, body, ctx):
+    """Email a reset code to the address on file. The reply is the same whether
+    or not the ID exists, is active or has an email - and takes as long - so
+    this can't be used to find out who has an account."""
+    started = time.monotonic()
+    if not app.mail.available:
+        raise ApiError(503, "Password reset by email isn't set up yet. Ask your admin to reset your password.")
+    emp = str(body.get("empId", "")).strip()
+    if not emp or len(emp) > 64:
+        raise ApiError(400, "Enter your employee ID")
+    keys = ("reset-ip:" + ctx["ip"], "reset-id:" + emp.lower())
+    if app.limiter.blocked(*keys):
+        raise ApiError(429, "Too many code requests. Try again in 15 minutes.")
+    app.limiter.fail(*keys)                      # counts requests, not failures
+    u = app.db.user(emp)
+    if u and u["active"] and u.get("email"):
+        code = security.new_reset_code()
+        app.db.put_reset_code(u["emp_id"], security.reset_code_hash(code), time.time() + security.RESET_MINUTES * 60)
+        try:
+            app.mail.send(u["email"], *_reset_email(u, code))
+        except mailer.MailError as e:
+            print("Password reset email for %s not sent: %s" % (u["emp_id"], e), file=sys.stderr)
+            app.db.drop_reset_code(u["emp_id"])
+    time.sleep(max(0.0, getattr(app, "reset_pad", RESET_PAD_SECONDS) - (time.monotonic() - started)))
+    return {"ok": True, "message": RESET_SENT}, []
+
+
+def reset_with_code(app, body, ctx):
+    """Set a new password with an emailed code. The code is checked before the
+    new password, so password rules (which mention the person's name and ID)
+    never tell a stranger anything about an account."""
+    emp = str(body.get("empId", "")).strip()
+    code = re.sub(r"\s", "", str(body.get("code", "")))
+    nxt = body.get("password", "")
+    ip_key = "code-ip:" + ctx["ip"]
+    if app.limiter.blocked(ip_key):
+        raise ApiError(429, "Too many wrong codes. Try again in 15 minutes.")
+    u = app.db.user(emp) if emp else None
+    live = app.db.use_reset_attempt(u["emp_id"]) if (u and u["active"] and re.fullmatch(r"\d{6}", code)) else None
+    if not live or live["attempts"] > security.RESET_TRIES or not security.check_reset_code(code, live["code_hash"]):
+        if live and live["attempts"] >= security.RESET_TRIES:
+            app.db.drop_reset_code(u["emp_id"])  # used up: they need a new code
+        app.limiter.fail(ip_key)
+        raise ApiError(400, RESET_BAD_CODE)
+    problem = security.password_problem(nxt, u["emp_id"], u["name"])
+    if problem:
+        raise ApiError(400, problem)            # the code stays valid for another go
+    app.db.update_user(u["emp_id"], password=nxt, must_change=0)
+    app.db.drop_reset_code(u["emp_id"])
+    app.db.end_all_sessions(u["emp_id"])         # anyone signed in as them is signed out
+    keys = security.LoginLimiter.login_keys(u["emp_id"], ctx["ip"])
+    app.limiter.clear(keys[0], keys[2])          # a locked-out person can sign in straight away
+    app.db.mutate(lambda st: domain.log(st, "password reset by email code", "users", u["emp_id"], u["name"], u["name"]))
+    return {"ok": True}, []
+
+
+def mail_test(app, body, ctx):
+    """Admin: send a test email to their own address, to check the settings."""
+    admin = ctx["user"]
+    need(admin, "admin")
+    if not app.mail.available:
+        raise ApiError(400, "Email isn't set up yet — add the SMTP settings in Vercel, then redeploy.")
+    to = admin.get("email")
+    if not to:
+        raise ApiError(400, "Add your own email address first (Settings → Users), then send a test.")
+    try:
+        app.mail.send(to, "Leave Planner test email",
+                      "This is a test from Leave Planner. Password reset codes will reach people the same way.\n",
+                      '<p style="font-family:Segoe UI,Arial,sans-serif">This is a test from Leave Planner. '
+                      'Password reset codes will reach people the same way.</p>')
+    except mailer.MailError as e:
+        raise ApiError(502, str(e))
+    return {"ok": True, "to": to}, []
 
 
 def get_state(app, body, ctx):
@@ -244,6 +356,15 @@ def _check_teams(app, teams):
     return out
 
 
+def _check_email(app, value, emp_id=None):
+    """A clean address (or "" for none) that no other login is using."""
+    email = domain.clean_email(value)
+    owner = domain.email_owner(app.db.users(), email, except_emp=emp_id)
+    if owner:
+        raise ApiError(409, "%s is already used by %s" % (email, owner))
+    return email
+
+
 def create_user(app, body, ctx):
     need(ctx["user"], "admin")
     emp = str(body.get("empId", "")).strip()
@@ -261,7 +382,9 @@ def create_user(app, body, ctx):
         raise ApiError(400, problem)
     manager = _check_manager(app, body.get("managerEmpId"), emp)
     teams = _check_teams(app, body.get("teams"))
-    app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams, senior=senior)
+    email = _check_email(app, body.get("email"))
+    app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams, senior=senior,
+                       email=email)
     label = "senior manager" if senior else role
     app.db.mutate(lambda st: domain.log(st, "login created (%s)" % label, "users", emp, name, ctx["user"]["name"]))
     return {"state": state_payload(app, ctx["user"])}, []
@@ -290,6 +413,8 @@ def update_user(app, body, ctx):
         changes["manager_emp_id"] = _check_manager(app, body["managerEmpId"], emp)
     if "teams" in body:
         changes["teams"] = _check_teams(app, body["teams"])
+    if "email" in body:
+        changes["email"] = _check_email(app, body["email"], emp)
     if "active" in body:
         if emp == admin["emp_id"] and not body["active"]:
             raise ApiError(400, "You cannot deactivate your own login")
@@ -306,6 +431,8 @@ def update_user(app, body, ctx):
                 unassigned += 1
     if changes.get("active") == 0 or "role" in changes:
         app.db.end_all_sessions(emp)
+    if "email" in changes and changes["email"] != u["email"]:
+        app.db.drop_reset_code(emp)                # a code sent to the old address stops working
     app.db.mutate(lambda st: domain.log(st, "login updated", "users", emp, u["name"], admin["name"]))
     return {"unassigned": unassigned, "state": state_payload(app, admin)}, []
 
@@ -342,8 +469,10 @@ def delete_user(app, body, ctx):
 
 
 # ------------------------------------------------------------------ many logins from a spreadsheet (admin)
-def template_file(app, ctx):
-    """(status, xlsx bytes or an error payload) - wsgi sends a 200 as a file."""
+def spreadsheet_file(app, path, ctx):
+    """(status, xlsx bytes or an error payload) - wsgi sends a 200 as a file.
+    /api/users/template: blank sheet for new logins.
+    /api/users/emails-sheet: every login with its email, to fill in."""
     user = ctx["user"]
     if not user:
         return 401, {"error": "Please sign in"}
@@ -351,22 +480,13 @@ def template_file(app, ctx):
         return 403, {"error": "Please set a new password first", "mustChange": True}
     if user["role"] != "admin":
         return 403, {"error": "You don't have permission to do that"}
+    if path == "/api/users/emails-sheet":
+        return 200, bulk_users.emails_xlsx(app.db.users())
     return 200, bulk_users.template_xlsx(app.db.read_state().get("teams", []))
 
 
-def _import_row(p):
-    return {"row": p["row"], "empId": p["empId"], "name": p["name"],
-            "role": "senior_manager" if p["senior"] else p["role"], "manager": p["manager"], "teams": p["teams"],
-            "newTeams": p.get("newTeams", []),
-            "passwordGiven": bool(p["password"]), "errors": p["errors"],
-            "created": bool(p.get("created")), "oneTimePassword": p.get("oneTimePassword")}
-
-
-def import_users(app, body, ctx):
-    """Preview (commit false) or create (commit true) logins from an .xlsx/.csv.
-    Every row is checked like a single login; only rows that pass are created."""
-    admin = ctx["user"]
-    need(admin, "admin")
+def _upload(body):
+    """(filename, bytes) of a spreadsheet sent as base64."""
     try:
         raw = base64.b64decode(str(body.get("data") or ""), validate=True)
     except (ValueError, binascii.Error):
@@ -375,7 +495,43 @@ def import_users(app, body, ctx):
         raise ApiError(400, "That file is empty")
     if len(raw) > IMPORT_MAX_FILE:
         raise ApiError(413, "Files up to 2 MB, please — split larger lists")
-    filename = str(body.get("filename") or "")[:120]
+    return str(body.get("filename") or "")[:120], raw
+
+
+def _import_row(p):
+    return {"row": p["row"], "empId": p["empId"], "name": p["name"],
+            "role": "senior_manager" if p["senior"] else p["role"], "manager": p["manager"], "teams": p["teams"],
+            "newTeams": p.get("newTeams", []), "email": p.get("email") or "",
+            "passwordGiven": bool(p["password"]), "errors": p["errors"],
+            "created": bool(p.get("created")), "oneTimePassword": p.get("oneTimePassword")}
+
+
+def import_emails(app, body, ctx):
+    """Preview (commit false) or save (commit true) emails for existing logins
+    from the downloaded email sheet. Only rows that pass are saved."""
+    admin = ctx["user"]
+    need(admin, "admin")
+    filename, raw = _upload(body)
+    plan = bulk_users.plan_emails(bulk_users.read_email_rows(filename, raw), app.db.users())
+    ready = [p for p in plan if not p["errors"]]
+    changes = sum(1 for p in ready if p["status"] == "change")
+    if not body.get("commit"):
+        return {"rows": plan, "changes": changes}, []
+    n = bulk_users.apply_emails(app.db, ready)
+    for p in ready:
+        if p["status"] == "change":
+            app.db.drop_reset_code(p["empId"])
+    if n:
+        app.db.mutate(lambda st: domain.log(st, "emails updated (%d)" % n, "users", "", filename, admin["name"]))
+    return {"rows": plan, "updated": n, "state": state_payload(app, admin)}, []
+
+
+def import_users(app, body, ctx):
+    """Preview (commit false) or create (commit true) logins from an .xlsx/.csv.
+    Every row is checked like a single login; only rows that pass are created."""
+    admin = ctx["user"]
+    need(admin, "admin")
+    filename, raw = _upload(body)
     rows = bulk_users.read_rows(filename, raw)
     plan = bulk_users.plan(rows, app.db.users(), app.db.read_state().get("teams", []))
     ready = [p for p in plan if not p["errors"]]
@@ -498,6 +654,9 @@ ROUTES = {
     ("POST", "/api/logout"): logout,
     ("GET", "/api/me"): me,
     ("POST", "/api/me/password"): change_password,
+    ("POST", "/api/password/forgot"): forgot_password,
+    ("POST", "/api/password/reset"): reset_with_code,
+    ("POST", "/api/mail/test"): mail_test,
     ("GET", "/api/state"): get_state,
     ("POST", "/api/requests"): submit_request,
     ("POST", "/api/requests/decide"): decide_request,
@@ -507,6 +666,7 @@ ROUTES = {
     ("POST", "/api/users/reset-password"): reset_password,
     ("POST", "/api/users/delete"): delete_user,
     ("POST", "/api/users/import"): import_users,
+    ("POST", "/api/users/emails"): import_emails,
     ("POST", "/api/holidays/add"): holiday_add,
     ("POST", "/api/holidays/remove"): holiday_remove,
     ("POST", "/api/teams/add"): team_add,
@@ -528,7 +688,7 @@ def handle(app, method, path, body, ctx):
     user = ctx["user"]
     if user and user["must_change"] and path not in PASSWORD_GATE_OPEN:
         return 403, {"error": "Please set a new password first", "mustChange": True}, []
-    if fn not in (login,) and not user and path != "/api/logout":
+    if fn not in (login, forgot_password, reset_with_code) and not user and path != "/api/logout":
         return 401, {"error": "Please sign in"}, []
     try:
         payload, headers = fn(app, body, ctx)

@@ -18,17 +18,43 @@ import json
 import zipfile
 from xml.sax.saxutils import escape as xml_escape
 import os
+import re
 import shutil
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app as runner  # noqa: E402
 import db as dbm      # noqa: E402
 import domain         # noqa: E402
+import mailer         # noqa: E402
 import security       # noqa: E402
 import wsgi           # noqa: E402
+
+
+class FakeMail:
+    """Stands in for the SMTP sender: keeps every message so tests can read the codes."""
+    configured = available = True
+    console = False
+
+    def __init__(self):
+        self.sent = []
+
+    def describe(self):
+        return "Test mail"
+
+    def send(self, to, subject, text, html=None):
+        self.sent.append({"to": to, "subject": subject, "text": text, "html": html})
+
+    def to(self, address):
+        return [m for m in self.sent if m["to"] == address]
+
+    def last_code(self, address):
+        mine = self.to(address)
+        found = re.search(r"\b(\d{6})\b", mine[-1]["text"]) if mine else None
+        return found.group(1) if found else None
 
 PASS, FAIL = [], []
 
@@ -134,8 +160,10 @@ def main():
     if pg_url:
         print("Using Postgres from TEST_DATABASE_URL (tables will be dropped)")
         with dbm.DB(pg_url).tx() as c:
-            c.execute("DROP TABLE IF EXISTS login_failures, sessions, state, users")
-    application = wsgi.App(target, seed_path)
+            c.execute("DROP TABLE IF EXISTS password_resets, login_failures, sessions, state, users")
+    mail = FakeMail()
+    application = wsgi.App(target, seed_path, mail=mail)
+    application.reset_pad = 0          # the anti-timing pause is checked on its own below
     srv = runner.serve(application, "127.0.0.1", 0)
     port = srv.server_address[1]
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -481,6 +509,184 @@ def main():
     loop = {"X": {"emp_id": "X", "name": "Xan Loop", "role": "manager", "manager_emp_id": "Y", "active": 1},
             "Y": {"emp_id": "Y", "name": "Yul Loop", "role": "manager", "manager_emp_id": "X", "active": 1}}
     check("a loop in manager assignments doesn't hang", domain.reporting_chain(loop["X"], loop) == {"Y"})
+
+    print("\n-- password reset by email")
+    here = "127.0.0.1"
+
+    def fresh_limits():
+        """Each check below starts from clean request counts for this address."""
+        application.limiter.clear("reset-ip:" + here, "code-ip:" + here, "ip:" + here,
+                                  *["reset-id:" + x for x in ("r1", "r2", "r3", "r4", "nobody-here")])
+
+    admin.login("A1", "Blue-Harbor-71")
+    upd = lambda emp_id, value: admin.req("POST", "/api/users/update", {"empId": emp_id, "email": value})
+    for emp_id, nm in (("R1", "Rita Reset"), ("R2", "Ravi Reset"), ("R3", "Rhea Reset")):
+        mk(emp_id, nm, "employee", None, ["Alpha"])
+    r1, r2 = Client(port), Client(port)
+    check("R1 and R2 set their own passwords", r1.ready("R1", "Start-Here-2026", "Quiet-Lake-81")[0] == 200
+          and r2.ready("R2", "Start-Here-2026", "Quiet-Lake-82")[0] == 200)
+
+    s, b = upd("R1", "  Rita.Reset@Example.COM ")
+    row = [u for u in b.get("state", {}).get("team", []) if u["empId"] == "R1"]
+    check("admin saves an email, trimmed and lower-cased", s == 200 and row and row[0].get("email") == "rita.reset@example.com", b)
+    check("something that isn't an email address is refused", upd("R2", "not-an-email")[0] == 400)
+    check("each address belongs to one login", upd("R2", "RITA.RESET@example.com")[0] == 409)
+    s, b = admin.req("POST", "/api/users", {"empId": "R4", "name": "Remy Reset", "role": "employee",
+                                            "password": "Start-Here-2026", "email": "remy@example.com"})
+    check("a login can be created with an email", s == 200 and db.user("R4")["email"] == "remy@example.com", b)
+    check("...but not with one already in use", admin.req("POST", "/api/users", {
+        "empId": "R5", "name": "Rory Reset", "role": "employee", "password": "Start-Here-2026",
+        "email": "remy@example.com"})[0] == 409)
+    m1c = Client(port)
+    m1c.login("M1", "Silver-Pine-33")
+    _, mst = m1c.req("GET", "/api/state")
+    check("managers never receive anyone's email", mst.get("team") and all("email" not in u for u in mst["team"]))
+    check("people see their own email", r1.req("GET", "/api/me")[1].get("user", {}).get("email") == "rita.reset@example.com")
+    _, ast = admin.req("GET", "/api/state")
+    check("admins see whether email is set up", ast.get("mail", {}).get("ready") is True, ast.get("mail"))
+
+    anon2 = Client(port)
+    forgot = lambda emp_id: anon2.req("POST", "/api/password/forgot", {"empId": emp_id})
+    reset = lambda emp_id, code, pw: anon2.req("POST", "/api/password/reset", {"empId": emp_id, "code": code, "password": pw})
+    fresh_limits()
+    before = len(mail.sent)
+    s1, b1 = forgot("R1")
+    code = mail.last_code("rita.reset@example.com")
+    check("a 6-digit code is emailed to the address on file", s1 == 200 and len(mail.sent) == before + 1 and code, (s1, b1))
+    check("the code is never in the reply", code and code not in json.dumps(b1))
+    s2, b2 = forgot("NOBODY-HERE")
+    s3, b3 = forgot("R2")                             # no email on file
+    check("an unknown ID, or one without an email, gets the very same reply - and nothing is sent",
+          (s2, b2) == (s1, b1) == (s3, b3) and len(mail.sent) == before + 1, (b2, b3))
+    with db.tx() as c:
+        stored = c.one("SELECT code_hash FROM password_resets WHERE emp_id = ?", ("R1",))
+    check("only a hash of the code is stored", stored and code not in stored["code_hash"])
+    check("a wrong code is refused", reset("R1", "%06d" % ((int(code) + 1) % 10 ** 6), "Fresh-Meadow-93")[0] == 400)
+    check("the code must belong to that employee ID", reset("R2", code, "Fresh-Meadow-93")[0] == 400)
+    s, b = reset("R1", code, "password123")
+    check("a weak new password is refused, with the reason", s == 400 and "common" in b.get("error", ""), b)
+    signed_in = r1.req("GET", "/api/state")[0] == 200
+    s, b = reset("R1", code, "Fresh-Meadow-93")
+    check("the right code sets the new password", s == 200, b)
+    check("...signs them out everywhere", signed_in and r1.req("GET", "/api/state")[0] == 401)
+    check("...and the new password works, the old one doesn't",
+          Client(port).login("R1", "Fresh-Meadow-93")[0] == 200 and Client(port).login("R1", "Quiet-Lake-81")[0] == 401)
+    check("a code works only once", reset("R1", code, "Other-Meadow-94")[0] == 400)
+    check("the reset is in the activity log",
+          any(a["action"] == "password reset by email code" and a["id"] == "R1" for a in admin.req("GET", "/api/state")[1]["audit"]))
+
+    fresh_limits()
+    forgot("R1")
+    code = mail.last_code("rita.reset@example.com")
+    for _ in range(security.RESET_TRIES):
+        reset("R1", "%06d" % ((int(code) + 7) % 10 ** 6), "Fresh-Meadow-95")
+    check("five wrong guesses use the code up - even the right one fails after", reset("R1", code, "Fresh-Meadow-95")[0] == 400)
+    fresh_limits()
+    forgot("R1")
+    code = mail.last_code("rita.reset@example.com")
+    with db.tx() as c:
+        c.execute("UPDATE password_resets SET expires_at = ? WHERE emp_id = ?", (time.time() - 1, "R1"))
+    check("an expired code is refused", reset("R1", code, "Fresh-Meadow-96")[0] == 400)
+    fresh_limits()
+    forgot("R1")
+    first = mail.last_code("rita.reset@example.com")
+    forgot("R1")
+    second = mail.last_code("rita.reset@example.com")
+    check("asking again replaces the earlier code", first == second or reset("R1", first, "Fresh-Meadow-97")[0] == 400)
+    upd("R1", "rita.new@example.com")
+    check("changing someone's email cancels a code sent to the old address", reset("R1", second, "Fresh-Meadow-97")[0] == 400)
+
+    fresh_limits()
+    statuses = [forgot("R2")[0] for _ in range(4)]
+    check("at most 3 codes per employee ID in 15 minutes", statuses == [200, 200, 200, 429], statuses)
+    fresh_limits()
+    sprayed = [forgot("SPRAY%d" % i)[0] for i in range(11)]
+    check("one address asking for codes for many IDs is stopped (10)", sprayed == [200] * 10 + [429], sprayed)
+    fresh_limits()
+    guessed = [reset("R1", "%06d" % i, "Fresh-Meadow-98")[0] for i in range(11)]
+    check("one address entering many wrong codes is stopped (10)", guessed == [400] * 10 + [429], guessed)
+
+    fresh_limits()
+    upd("R2", "ravi.reset@example.com")
+    for _ in range(5):
+        Client(port).login("R2", "wrong-guess-1")
+    check("R2 locked out on this device", Client(port).login("R2", "Quiet-Lake-82")[0] == 429)
+    forgot("R2")
+    check("...resets by email and can sign in straight away",
+          reset("R2", mail.last_code("ravi.reset@example.com"), "Bright-River-62")[0] == 200
+          and Client(port).login("R2", "Bright-River-62")[0] == 200)
+
+    fresh_limits()
+    application.reset_pad = 0.4
+    t0 = time.monotonic()
+    forgot("NOBODY-HERE")
+    took = time.monotonic() - t0
+    application.reset_pad = 0
+    check("a code request takes the same minimum time whether or not an email is sent", took >= 0.4, took)
+
+    s, b = admin.req("POST", "/api/mail/test", {})
+    check("a test email needs the admin's own address first", s == 400, b)
+    upd("A1", "ada.admin@example.com")
+    s, b = admin.req("POST", "/api/mail/test", {})
+    check("admin sends themselves a test email", s == 200 and b.get("to") == "ada.admin@example.com"
+          and mail.to("ada.admin@example.com"), b)
+    check("non-admins can't send test emails", m1c.req("POST", "/api/mail/test", {})[0] == 403)
+
+    s, sheet, h = admin.req("GET", "/api/users/emails-sheet", raw=True)
+    sheet_ok = s == 200 and "spreadsheetml" in h.get("Content-Type", "")
+    if sheet_ok:
+        with zipfile.ZipFile(io.BytesIO(sheet)) as z:
+            body1 = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        sheet_ok = all(t in body1 for t in ("Employee ID", "Email", "R1", "rita.new@example.com"))
+    check("admin downloads the email sheet: every login with its current address", sheet_ok, s)
+    check("non-admins can't download it", m1c.req("GET", "/api/users/emails-sheet")[0] == 403)
+    em = lambda raw, commit=False: admin.req("POST", "/api/users/emails", {
+        "filename": "emails.xlsx", "data": base64.b64encode(raw).decode(), "commit": commit})
+    book = xlsx_bytes([["Employee ID", "Full name (for reference)", "Email"],
+                       ["R3", "Rhea Reset", "rhea@example.com"],          # new address
+                       ["R1", "Rita Reset", "ravi.reset@example.com"],    # R1 and R2 swap
+                       ["R2", "Ravi Reset", "rita.new@example.com"],
+                       ["A1", "Ada Admin", ""],                           # blank: left as it is
+                       ["R4", "Remy Reset", "remy@example.com"],          # unchanged
+                       ["ZZ9", "Nobody", "zz@example.com"],               # no such login
+                       ["R4", "Remy Again", "other@example.com"],         # same ID twice
+                       ["M1", "Mona Manager", "nope"],                    # not an email
+                       ["G1", "Gus Global", "remy@example.com"]])         # R4's address
+    s, b = em(book)
+    by = {(r["empId"], r["row"]): r for r in b.get("rows", [])}
+    check("email sheet preview: 3 to save, two people may swap addresses", s == 200 and b.get("changes") == 3, b.get("changes"))
+    check("...blank and unchanged rows are left alone",
+          by.get(("A1", 5), {}).get("status") == "blank" and by.get(("R4", 6), {}).get("status") == "same")
+    check("...unknown IDs, repeats, bad addresses and taken addresses are explained",
+          all(by.get(k, {}).get("errors") for k in (("ZZ9", 7), ("R4", 8), ("M1", 9), ("G1", 10))),
+          {k: v["errors"] for k, v in by.items()})
+    check("...and nothing is saved by the preview", db.user("R3")["email"] == "")
+    check("non-admins can't update emails", m1c.req("POST", "/api/users/emails", {
+        "filename": "e.xlsx", "data": base64.b64encode(book).decode(), "commit": True})[0] == 403)
+    s, b = em(book, commit=True)
+    check("saving updates exactly the rows that passed", s == 200 and b.get("updated") == 3
+          and (db.user("R1")["email"], db.user("R2")["email"], db.user("R3")["email"], db.user("G1")["email"])
+          == ("ravi.reset@example.com", "rita.new@example.com", "rhea@example.com", ""), b.get("updated"))
+
+    csv_new = b"Employee ID,Full name,Email\r\nN20,Nia Newmail,Nia@Example.com\r\nN21,Ned Dupmail,rhea@example.com\r\n"
+    s, b = imp(admin, csv_new, "new.csv")
+    new_rows = {r["empId"]: r for r in b.get("rows", [])}
+    check("new logins can come with an email in the import",
+          s == 200 and new_rows.get("N20", {}).get("email") == "nia@example.com" and not new_rows["N20"]["errors"], b)
+    check("...and an address already in use is caught in the preview", new_rows.get("N21", {}).get("errors"))
+    imp(admin, csv_new, "new.csv", True)
+    check("the imported login keeps its email", (db.user("N20") or {}).get("email") == "nia@example.com")
+
+    hosted_plain = runner.serve(wsgi.App(target, seed_path, trust_proxy=True, mail=mailer.Mailer(env={})), "127.0.0.1", 0)
+    threading.Thread(target=hosted_plain.serve_forever, daemon=True).start()
+    s, b = Client(hosted_plain.server_address[1]).req("POST", "/api/password/forgot", {"empId": "R1"})
+    check("hosted without email settings, people are told to ask an admin", s == 503 and "admin" in b.get("error", ""), b)
+    hosted_plain.shutdown()
+    smtp = mailer.Mailer(env={"SMTP_HOST": "smtp.gmail.com", "SMTP_USER": "team@example.com", "SMTP_PASSWORD": "abcd efgh ijkl mnop"})
+    check("SMTP settings come from the environment, and the password is never shown",
+          smtp.configured and smtp.port == 587 and smtp.sender == "team@example.com" and "abcd" not in smtp.describe())
+    local = mailer.Mailer(env={}, console=True)
+    check("on your own computer with nothing set, codes go to the console", local.available and not local.configured)
 
     print("\n-- storage & brute force")
     if not pg_url:
