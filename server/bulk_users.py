@@ -41,6 +41,7 @@ COLUMNS = [
 EMAIL_COLUMNS = [
     ("empId", "Employee ID", 16),
     ("name", "Full name (for reference)", 30),
+    ("manager", "Manager (for reference)", 30),
     ("email", "Email", 36),
 ]
 # Header spellings accepted when reading back (lower-case, letters only)
@@ -57,6 +58,8 @@ ALIASES = {
 EMAIL_ALIASES = {
     "empId": ALIASES["empId"],
     "name": ALIASES["name"] + ("fullnameforreference",),
+    # Read but never applied: the sheet only changes emails, never who manages whom.
+    "manager": ALIASES["manager"] + ("managerforreference", "managername", "reportsto"),
     "email": EMAIL_WORDS,
 }
 ROLE_WORDS = {
@@ -131,21 +134,29 @@ def template_xlsx(teams):
 
 
 def emails_xlsx(users):
-    """Every login with its current email, to fill in and upload again."""
+    """Every login with their manager's name and current email, to fill in and
+    upload again."""
     people = sorted(users.values(), key=lambda u: u["name"].lower())
+
+    def manager_name(u):
+        m = users.get(u.get("manager_emp_id") or "")
+        return m["name"] if m else ""
+
     lines = [
         ("How to fill in the Emails sheet", 2),
         ("", 0),
-        ("Every login is listed with the email on file now. Type or paste addresses in the Email column.", 0),
+        ("Every login is listed with their manager and the email on file now. Type or paste addresses in the Email column.", 0),
         ("Password reset codes go to this address, so people can reset a forgotten password themselves.", 0),
         ("Each address can belong to one login only.", 0),
         ("Leave an email blank to keep what's on file. To remove an address, edit that person in Settings → Users.", 0),
-        ("Only the Email column is used. Names are there for reference; delete rows you aren't changing if you like.", 0),
+        ("Only the Email column is used. Names and managers are there for reference - changing them here changes "
+         "nothing (assign managers in Settings → Users). Delete rows you aren't changing if you like.", 0),
         ("Save as .xlsx (or .csv), then choose the file under Update emails in Settings → Users. You'll see a preview first.", 0),
         ("", 0),
         ("This file holds people's email addresses - delete it once you've uploaded it.", 2),
     ]
-    return _workbook("Emails", _data_sheet(EMAIL_COLUMNS, [(u["emp_id"], u["name"], u.get("email") or "") for u in people]),
+    return _workbook("Emails", _data_sheet(EMAIL_COLUMNS, [(u["emp_id"], u["name"], manager_name(u), u.get("email") or "")
+                                                           for u in people]),
                      _guide_sheet(lines))
 
 

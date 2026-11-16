@@ -27,6 +27,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import app as runner  # noqa: E402
+import bulk_users     # noqa: E402
 import db as dbm      # noqa: E402
 import domain         # noqa: E402
 import mailer         # noqa: E402
@@ -667,8 +668,24 @@ def main():
     check("saving updates exactly the rows that passed", s == 200 and b.get("updated") == 3
           and (db.user("R1")["email"], db.user("R2")["email"], db.user("R3")["email"], db.user("G1")["email"])
           == ("ravi.reset@example.com", "rita.new@example.com", "rhea@example.com", ""), b.get("updated"))
+    admin.req("POST", "/api/users/update", {"empId": "R3", "managerEmpId": "M1"})
+    s, sheet, _ = admin.req("GET", "/api/users/emails-sheet", raw=True)
+    back = {r["empId"]: r for r in bulk_users.read_email_rows("emails.xlsx", sheet)} if s == 200 else {}
+    check("the email sheet shows each person's manager by name",
+          back.get("R3", {}).get("manager") == "Mona Manager" and back.get("R1", {}).get("manager") == "",
+          {k: back.get(k, {}).get("manager") for k in ("R1", "R3")})
+    s, b = em(sheet)
+    check("the downloaded sheet uploads back as it is: no problems, nothing to change",
+          s == 200 and b.get("changes") == 0 and not any(r["errors"] for r in b.get("rows", [])),
+          [r for r in b.get("rows", []) if r["errors"]][:3])
+    edited = xlsx_bytes([["Employee ID", "Full name (for reference)", "Manager (for reference)", "Email"],
+                         ["R3", "Rhea Reset", "Someone Else", "rhea.new@example.com"]])
+    s, b = em(edited, commit=True)
+    check("with the Manager column, the email updates - and the manager is left alone",
+          s == 200 and b.get("updated") == 1 and db.user("R3")["email"] == "rhea.new@example.com"
+          and db.user("R3")["manager_emp_id"] == "M1", b.get("updated"))
 
-    csv_new = b"Employee ID,Full name,Email\r\nN20,Nia Newmail,Nia@Example.com\r\nN21,Ned Dupmail,rhea@example.com\r\n"
+    csv_new = b"Employee ID,Full name,Email\r\nN20,Nia Newmail,Nia@Example.com\r\nN21,Ned Dupmail,remy@example.com\r\n"
     s, b = imp(admin, csv_new, "new.csv")
     new_rows = {r["empId"]: r for r in b.get("rows", [])}
     check("new logins can come with an email in the import",

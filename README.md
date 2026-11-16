@@ -360,8 +360,9 @@ A full page, opened from the profile menu, with six sections:
   **Password reset by email:** shows whether sending is set up (see *Forgot
   password?* above), how many logins have an email, and a **Send me a test
   email** button. To fill in many addresses at once: **Download email sheet**
-  (every login with its current email), fill in the Email column, choose the
-  file. The preview shows what will change and explains any problem — unknown
+  (every login with their manager's name and current email), fill in the Email
+  column, choose the file. Only the Email column is applied — names and
+  managers are there to help you fill it in, and editing them changes nothing. The preview shows what will change and explains any problem — unknown
   IDs, repeated rows, bad or already-used addresses — and nothing is saved until
   you confirm. Blank emails are left as they are, and two people can swap
   addresses in one upload. The sheet holds people's addresses: delete it after.

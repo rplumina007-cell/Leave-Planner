@@ -430,8 +430,9 @@
         }, [I('download'), 'Download email sheet'])
       ]),
       el('div', {
-        class: 'sub', style: 'font-size:12px', text: 'The sheet lists every login with the email on file. Fill in the Email column ' +
-          'and choose the file — you’ll see what changes before anything is saved. Blank emails are left as they are. ' +
+        class: 'sub', style: 'font-size:12px', text: 'The sheet lists every login with their manager and the email on file. ' +
+          'Fill in the Email column and choose the file — you’ll see what changes before anything is saved. Blank emails are ' +
+          'left as they are; names and managers are for reference and never changed by the upload. ' +
           'The sheet holds people’s addresses, so delete it once it’s uploaded.'
       }),
       res && res.committed ? null : el('label', { class: 'f' }, ['Filled-in email sheet', input]),
