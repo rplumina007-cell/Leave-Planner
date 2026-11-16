@@ -383,6 +383,8 @@ def create_user(app, body, ctx):
     manager = _check_manager(app, body.get("managerEmpId"), emp)
     teams = _check_teams(app, body.get("teams"))
     email = _check_email(app, body.get("email"))
+    if not email:
+        raise ApiError(400, "Enter their email address — it's needed for password reset codes")
     app.db.create_user(emp, name, role, body["password"], manager, must_change=True, teams=teams, senior=senior,
                        email=email)
     label = "senior manager" if senior else role

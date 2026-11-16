@@ -116,8 +116,8 @@
         empId: emp.value.trim(), name: name.value.trim(), password: pw.value, role: role.value,
         managerEmpId: mgr.value || null, teams: teamPick.value(), email: email.value.trim()
       };
-      if (!body.empId || !body.name || !body.password) {
-        errBox(err, 'Employee ID, full name and password are all required.');
+      if (!body.empId || !body.name || !body.password || !body.email) {
+        errBox(err, 'Employee ID, full name, password and email are all required.');
         return;
       }
       S.createUser(body).then(function () { U.toast('Login created for ' + body.name); },
@@ -299,7 +299,7 @@
           ])]),
           el('div', { class: 'f2' }, [el('label', { class: 'f' }, ['Role', role]), el('label', { class: 'f' }, ['Manager', mgr])])
         ]),
-        el('label', { class: 'f', style: 'margin-top:12px' }, ['Email — where their password reset codes go (optional)', email]),
+        el('label', { class: 'f', style: 'margin-top:12px' }, ['Email — where their password reset codes go', email]),
         el('div', { class: 'f', style: 'margin-top:12px' }, ['Teams — decide who they can see', teamPick.node]),
         el('div', { class: 'row', style: 'margin-top:12px;justify-content:space-between' }, [
           el('div', { class: 'sub', style: 'font-size:12px', text: 'They must choose their own password at first sign-in.' }),

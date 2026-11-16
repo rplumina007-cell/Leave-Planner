@@ -62,7 +62,7 @@ PASS, FAIL = [], []
 
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
-    print(("  ok   " if cond else "  FAIL ") + name + ("" if cond else "  -> %s" % detail))
+    print(("  ok   " if cond else "  FAIL ") + name + ("" if cond else "  -> %s" % (detail,)))
 
 
 class Client:
@@ -220,8 +220,15 @@ def main():
         check("create team " + t, new_team(t)[0] == 200)
     check("duplicate team name refused (any case)", new_team("alpha")[0] == 400)
     check("All Teams is built in and can't be created", new_team("all teams")[0] == 400)
-    mk = lambda emp, name, role, mgr=None, teams=None: admin.req("POST", "/api/users", {
-        "empId": emp, "name": name, "role": role, "password": "Start-Here-2026", "managerEmpId": mgr, "teams": teams or []})
+    mk = lambda emp, name, role, mgr=None, teams=None, email=None: admin.req("POST", "/api/users", {
+        "empId": emp, "name": name, "role": role, "password": "Start-Here-2026", "managerEmpId": mgr, "teams": teams or [],
+        "email": emp.lower() + "@example.com" if email is None else email})
+    s, b = mk("Q1", "Quentin Noemail", "employee", email="")
+    check("a login needs an email address", s == 400 and "email" in b.get("error", "").lower(), b)
+    s, b = mk("Q1", "Quentin Noemail", "employee", email="not-an-email")
+    check("...a real one", s == 400 and "email" in b.get("error", "").lower(), b)
+    check("...and nothing is created without one", admin.req("GET", "/api/state")[1].get("team") is not None
+          and "Q1" not in {u["empId"] for u in admin.req("GET", "/api/state")[1]["team"]})
     check("create manager M1 in Alpha + Beta", mk("M1", "Mona Manager", "manager", None, ["Alpha", "Beta"])[0] == 200)
     check("create manager M2 reporting to M1, in Beta", mk("M2", "Max Manager", "manager", "M1", ["Beta"])[0] == 200)
     check("create employee E1 under M1, in Alpha", mk("E1", "Eve Employee", "employee", "M1", ["Alpha"])[0] == 200)
@@ -231,11 +238,12 @@ def main():
     check("unknown team refused", mk("E6", "Uma Unknown", "employee", None, ["Nope"])[0] == 400)
     check("duplicate employee ID refused", mk("E1", "Someone Else", "employee")[0] == 409)
     check("employee can't be assigned as a manager", mk("E3", "Ezra Employee", "employee", "E1")[0] == 400)
-    check("create needs a valid password", admin.req("POST", "/api/users", {"empId": "E4", "name": "Emma Employee", "role": "employee", "password": "123"})[0] == 400)
+    check("create needs a valid password", admin.req("POST", "/api/users", {
+        "empId": "E4", "name": "Emma Employee", "role": "employee", "password": "123", "email": "e4@example.com"})[0] == 400)
     for weak, why in (("Plan-7x92", "under 10 characters"), ("Password2026!", "a common password"),
                       ("Welcome@12345", "a common password"), ("1234567890", "a run of digits")):
         check("password refused: " + why, admin.req("POST", "/api/users", {
-            "empId": "E7", "name": "Ivy Wren", "role": "employee", "password": weak})[0] == 400)
+            "empId": "E7", "name": "Ivy Wren", "role": "employee", "password": weak, "email": "e7@example.com"})[0] == 400)
     _, ast = admin.req("GET", "/api/state")
     check("admin sees the team list", ast.get("teams") == ["Alpha", "Beta", "Gamma"], ast.get("teams"))
     check("All Teams can be held on its own", [u["teams"] for u in ast["team"] if u["empId"] == "G1"] == [["All Teams"]])
@@ -428,7 +436,8 @@ def main():
     check("admin removes a holiday", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 200)
     check("removing an unknown holiday refused", admin.req("POST", "/api/holidays/remove", {"date": "2026-11-03"})[0] == 400)
     check("admin creates a senior manager", admin.req("POST", "/api/users", {
-        "empId": "S1", "name": "Sana Senior", "role": "senior_manager", "password": "Start-Here-2026", "teams": ["Alpha"]})[0] == 200)
+        "empId": "S1", "name": "Sana Senior", "role": "senior_manager", "password": "Start-Here-2026", "teams": ["Alpha"],
+        "email": "s1@example.com"})[0] == 200)
     check("a manager can be mapped to a senior manager", admin.req("POST", "/api/users/update", {"empId": "M1", "managerEmpId": "S1"})[0] == 200)
     s1 = [u for u in admin.req("GET", "/api/state")[1]["team"] if u["empId"] == "S1"]
     check("senior manager is a manager with the senior designation", s1 and s1[0]["role"] == "manager" and s1[0]["senior"] is True, s1)
@@ -533,6 +542,8 @@ def main():
     upd = lambda emp_id, value: admin.req("POST", "/api/users/update", {"empId": emp_id, "email": value})
     for emp_id, nm in (("R1", "Rita Reset"), ("R2", "Ravi Reset"), ("R3", "Rhea Reset")):
         mk(emp_id, nm, "employee", None, ["Alpha"])
+        upd(emp_id, "")            # start without an email, like logins made before emails were required
+    check("an admin can still remove someone's email", db.user("R2")["email"] == "")
     r1, r2 = Client(port), Client(port)
     check("R1 and R2 set their own passwords", r1.ready("R1", "Start-Here-2026", "Quiet-Lake-81")[0] == 200
           and r2.ready("R2", "Start-Here-2026", "Quiet-Lake-82")[0] == 200)
@@ -677,7 +688,7 @@ def main():
     s, b = em(book, commit=True)
     check("saving updates exactly the rows that passed", s == 200 and b.get("updated") == 3
           and (db.user("R1")["email"], db.user("R2")["email"], db.user("R3")["email"], db.user("G1")["email"])
-          == ("ravi.reset@example.com", "rita.new@example.com", "rhea@example.com", ""), b.get("updated"))
+          == ("ravi.reset@example.com", "rita.new@example.com", "rhea@example.com", "g1@example.com"), b.get("updated"))
     admin.req("POST", "/api/users/update", {"empId": "R3", "managerEmpId": "M1"})
     s, sheet, _ = admin.req("GET", "/api/users/emails-sheet", raw=True)
     back = {r["empId"]: r for r in bulk_users.read_email_rows("emails.xlsx", sheet)} if s == 200 else {}

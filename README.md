@@ -358,8 +358,8 @@ A full page, opened from the profile menu, with six sections:
   person in the file (it's where their password reset codes go): a row without
   one is marked in the preview and not created, and a file with no Email column
   — e.g. a template downloaded before it existed — is refused with a prompt to
-  download the latest. (Creating a single login in the form above, an email
-  is optional.)
+  download the latest. Creating a single login in the form above needs an
+  email too.
 
   **Password reset by email:** shows whether sending is set up (see *Forgot
   password?* above), how many logins have an email, and a **Send me a test
